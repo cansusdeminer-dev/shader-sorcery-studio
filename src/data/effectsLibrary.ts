@@ -678,7 +678,201 @@ export const EFFECTS_LIBRARY: Record<string, Effect> = {
     ]
   }
 
-  // Note: This demonstrates the system - in production would have 100+ effects across all categories
+,
+  // ORGANIC / DISTORTION / PARTICLE ADDITIONS
+  lavaLamp: {
+    name: 'Lava Lamp',
+    icon: 'lavaLamp',
+    description: 'Metaballs drifting in viscous fluid',
+    category: 'organic',
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uSpeed;
+      uniform float uBlobSize;
+      uniform float uViscosity;
+      uniform float uGravity;
+      uniform float uIntensity;
+      varying vec2 vUv;
+
+      float circle(vec2 p, vec2 c, float r) {
+        return r / length(p - c);
+      }
+
+      void main() {
+        vec2 st = vUv;
+        float t = uTime * uSpeed;
+
+        // Animated blob centers (6 blobs)
+        vec2 c0 = vec2(0.5 + 0.25*sin(t*0.7), 0.5 + 0.25*cos(t*0.5));
+        vec2 c1 = vec2(0.5 + 0.28*sin(t*0.9+1.0), 0.5 + 0.22*cos(t*0.6+2.0));
+        vec2 c2 = vec2(0.5 + 0.22*sin(t*0.6+3.0), 0.5 + 0.28*cos(t*0.8+4.0));
+        vec2 c3 = vec2(0.5 + 0.20*sin(t*0.5+5.0), 0.5 + 0.25*cos(t*0.7+6.0));
+        vec2 c4 = vec2(0.5 + 0.24*sin(t*1.1+7.0), 0.5 + 0.20*cos(t*0.9+8.0));
+        vec2 c5 = vec2(0.5 + 0.26*sin(t*0.8+9.0), 0.5 + 0.24*cos(t*0.7+10.0));
+
+        // Gravity stretch
+        st.y += sin(st.x*6.2831 + t*0.2) * (0.02*uGravity);
+
+        float field = 0.0;
+        field += circle(st, c0, uBlobSize);
+        field += circle(st, c1, uBlobSize*0.9);
+        field += circle(st, c2, uBlobSize*1.1);
+        field += circle(st, c3, uBlobSize*0.8);
+        field += circle(st, c4, uBlobSize);
+        field += circle(st, c5, uBlobSize*1.2);
+
+        // Smooth thresholding
+        float iso = smoothstep(1.2 - uViscosity, 1.2 + uViscosity, field);
+        vec3 col = mix(vec3(0.02,0.0,0.05), vec3(1.0,0.2,0.6), iso) * uIntensity;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    uniforms: {
+      uTime: { value: 0 },
+      uSpeed: { value: 0.6 },
+      uBlobSize: { value: 0.08 },
+      uViscosity: { value: 0.1 },
+      uGravity: { value: 0.8 },
+      uIntensity: { value: 1.0 },
+    },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.1, max: 2.0, step: 0.05, default: 0.6 },
+      { name: 'Blob Size', key: 'uBlobSize', type: 'slider', min: 0.03, max: 0.2, step: 0.005, default: 0.08 },
+      { name: 'Viscosity', key: 'uViscosity', type: 'slider', min: 0.02, max: 0.3, step: 0.01, default: 0.1 },
+      { name: 'Gravity Warp', key: 'uGravity', type: 'slider', min: 0.0, max: 2.0, step: 0.05, default: 0.8 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 2.0, step: 0.1, default: 1.0 },
+    ]
+  },
+
+  marbleVeins: {
+    name: 'Marble Veins',
+    icon: 'marbleVeins',
+    description: 'Procedural marble with vein turbulence',
+    category: 'distortion',
+    vertexShader: `
+      varying vec2 vUv;
+      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uScale; uniform float uVeinThickness; uniform float uTurbulence; uniform float uIntensity; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+      float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1,0)); float c=hash(i+vec2(0,1)); float d=hash(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y; }
+      float fbm(vec2 p){ float v=0.0; float a=0.5; for(int i=0;i<6;i++){ v+=a*noise(p); p*=2.0; a*=0.5;} return v; }
+      void main(){ vec2 st=vUv*uScale; float t=uTime*uSpeed; float n=fbm(st + fbm(st*2.0 + t)*uTurbulence); float veins = abs(sin((st.x + n)*3.1415)); float m = smoothstep(uVeinThickness, 0.0, veins);
+        vec3 base = vec3(0.95,0.95,1.0); vec3 vein = vec3(0.1,0.1,0.2); vec3 col = mix(base, vein, m) * uIntensity; gl_FragColor = vec4(col,1.0);} 
+    `,
+    uniforms: {
+      uTime: { value: 0 }, uSpeed: { value: 0.4 }, uScale: { value: 3.0 }, uVeinThickness: { value: 0.2 }, uTurbulence: { value: 2.5 }, uIntensity: { value: 1.0 }
+    },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 1.5, step: 0.05, default: 0.4 },
+      { name: 'Scale', key: 'uScale', type: 'slider', min: 1.0, max: 8.0, step: 0.5, default: 3.0 },
+      { name: 'Vein Thickness', key: 'uVeinThickness', type: 'slider', min: 0.0, max: 0.6, step: 0.02, default: 0.2 },
+      { name: 'Turbulence', key: 'uTurbulence', type: 'slider', min: 0.5, max: 5.0, step: 0.1, default: 2.5 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 2.0, step: 0.1, default: 1.0 }
+    ]
+  },
+
+  gradientTunnel: {
+    name: 'Gradient Tunnel',
+    icon: 'gradientTunnel',
+    description: 'Hypnotic radial tunnel with twist',
+    category: 'distortion',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uTwist; uniform float uSegments; uniform float uBrightness; varying vec2 vUv;
+      vec3 hsv2rgb(vec3 c){ vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0); vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www); return c.z*mix(K.xxx, clamp(p-K.xxx, 0.0,1.0), c.y);} 
+      void main(){ vec2 st=vUv-0.5; float r=length(st); float a=atan(st.y,st.x); float t=uTime*uSpeed; a += r*uTwist + t*0.5; float bands = sin(a*uSegments + r*20.0 - t*2.0);
+        float v = smoothstep(-0.1,0.9,bands); vec3 col = hsv2rgb(vec3(fract(a/6.2831), 0.8, v*uBrightness)); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.2}, uTwist:{value:3.0}, uSegments:{value:12.0}, uBrightness:{value:1.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.2, max: 4.0, step: 0.1, default: 1.2 },
+      { name: 'Twist', key: 'uTwist', type: 'slider', min: 0.0, max: 8.0, step: 0.2, default: 3.0 },
+      { name: 'Segments', key: 'uSegments', type: 'slider', min: 4, max: 40, step: 1, default: 12 },
+      { name: 'Brightness', key: 'uBrightness', type: 'slider', min: 0.2, max: 2.0, step: 0.1, default: 1.0 }
+    ]
+  },
+
+  windTunnel: {
+    name: 'Wind Tunnel',
+    icon: 'windTunnel',
+    description: 'Streamlines flowing through a tunnel',
+    category: 'particle',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uFreq; uniform float uFlow; uniform float uContrast; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+      float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1,0)); float c=hash(i+vec2(0,1)); float d=hash(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y; }
+      void main(){ vec2 st=vUv; float t=uTime*uSpeed; float field = sin(st.y*uFreq + noise(st*4.0 + t)*6.0 + t*4.0);
+        float lanes = smoothstep(0.6+uContrast, 0.7+uContrast, field*uFlow);
+        vec3 col = mix(vec3(0.02,0.03,0.05), vec3(0.6,0.9,1.0), lanes);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uFreq:{value:30.0}, uFlow:{value:1.0}, uContrast:{value:0.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.2, max: 5.0, step: 0.1, default: 1.0 },
+      { name: 'Frequency', key: 'uFreq', type: 'slider', min: 10, max: 80, step: 2, default: 30 },
+      { name: 'Flow Strength', key: 'uFlow', type: 'slider', min: 0.5, max: 2.0, step: 0.05, default: 1.0 },
+      { name: 'Contrast', key: 'uContrast', type: 'slider', min: -0.3, max: 0.5, step: 0.05, default: 0.0 }
+    ]
+  },
+
+  bioGoo: {
+    name: 'Bio Goo',
+    icon: 'bioGoo',
+    description: 'Organic dripping goo dynamics',
+    category: 'organic',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uDrip; uniform float uPulse; uniform float uIntensity; varying vec2 vUv;
+      float s(float x){ return smoothstep(0.0,1.0,x); }
+      void main(){ vec2 st=vUv; float t=uTime*uSpeed; float rip = sin(st.x*10.0 + t*3.0)*0.1 + sin(st.x*3.0 + t*0.7)*0.05; st.y += rip*uDrip; float blobs = s(0.7 - abs(sin(st.y*15.0 - t*2.0)));
+        float beat = 0.7 + 0.3*sin(t*uPulse);
+        vec3 col = mix(vec3(0.0,0.02,0.05), vec3(0.2,1.0,0.6), blobs*beat) * uIntensity;
+        gl_FragColor = vec4(col, 1.0); }
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uDrip:{value:1.0}, uPulse:{value:2.0}, uIntensity:{value:1.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.2, max: 3.0, step: 0.1, default: 1.0 },
+      { name: 'Drip Amount', key: 'uDrip', type: 'slider', min: 0.4, max: 2.0, step: 0.05, default: 1.0 },
+      { name: 'Pulse', key: 'uPulse', type: 'slider', min: 0.5, max: 6.0, step: 0.1, default: 2.0 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 2.0, step: 0.1, default: 1.0 }
+    ]
+  },
+
+  waterCaustics: {
+    name: 'Water Caustics',
+    icon: 'waterCaustics',
+    description: 'Shimmering underwater light patterns',
+    category: 'water',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uScale; uniform float uSharp; uniform float uIntensity; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+      float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1,0)); float c=hash(i+vec2(0,1)); float d=hash(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y; }
+      float fbm(vec2 p){ float v=0.0; float a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.0; a*=0.5;} return v; }
+      void main(){ vec2 st=(vUv-0.5)*uScale; float t=uTime*uSpeed; float n = fbm(st + fbm(st+ t*0.2)); float lines = pow(abs(sin((st.x+st.y)*10.0 + n*8.0 + t*3.0)), 10.0*uSharp);
+        vec3 water = mix(vec3(0.0,0.2,0.5), vec3(0.0,0.7,1.0), 0.6);
+        vec3 col = water + vec3(lines)*uIntensity; gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uScale:{value:2.0}, uSharp:{value:0.3}, uIntensity:{value:0.6} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.2, max: 3.0, step: 0.1, default: 1.0 },
+      { name: 'Scale', key: 'uScale', type: 'slider', min: 1.0, max: 6.0, step: 0.2, default: 2.0 },
+      { name: 'Sharpness', key: 'uSharp', type: 'slider', min: 0.1, max: 1.0, step: 0.05, default: 0.3 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 1.5, step: 0.05, default: 0.6 }
+    ]
+  }
+
 };
 
 export const EFFECT_CATEGORIES = {

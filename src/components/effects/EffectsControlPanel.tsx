@@ -98,6 +98,35 @@ export default function EffectsControlPanel({
             </Select>
           </div>
         );
+      case "color": {
+        const toHex = (rgb: number[] | string) => {
+          if (Array.isArray(rgb)) {
+            const [r, g, b] = rgb.map((v) => Math.round(Math.max(0, Math.min(1, Number(v))) * 255));
+            return "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
+          }
+          return String(rgb ?? "#ffffff");
+        };
+        const fromHex = (hex: string): number[] => {
+          const h = hex.replace("#", "");
+          const bigint = parseInt(h, 16);
+          return [(bigint >> 16 & 255) / 255, (bigint >> 8 & 255) / 255, (bigint & 255) / 255];
+        };
+        const hex = toHex(currentValue);
+        return (
+          <div key={setting.key} className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">{setting.name}</label>
+              <input
+                type="color"
+                value={hex}
+                onChange={(e) => handleSettingChange(setting.key, fromHex(e.target.value))}
+                className="h-6 w-10 p-0 bg-transparent border-0 cursor-pointer"
+                aria-label={`${setting.name} color`}
+              />
+            </div>
+          </div>
+        );
+      }
       default:
         return null;
     }

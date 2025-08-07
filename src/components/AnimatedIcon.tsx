@@ -268,6 +268,81 @@ export const AnimatedIcon: React.FC<AnimatedIconProps> = ({ type, className = "w
           <animate attributeName="r" values="2;4;2" dur="0.5s" repeatCount="indefinite" />
         </circle>
       </svg>
+    ),
+
+    // New unique animated icons
+    lavaLamp: (
+      <svg viewBox="0 0 24 24" className={className} fill="none">
+        <defs>
+          <linearGradient id="lava1">
+            <stop offset="0%" stopColor="#ff66aa" />
+            <stop offset="100%" stopColor="#ffcc66" />
+          </linearGradient>
+        </defs>
+        <rect x="7" y="3" width="10" height="18" rx="3" stroke="url(#lava1)" />
+        {[...Array(4)].map((_,i)=> (
+          <ellipse key={i} cx={12} cy={16 - i*3} rx={3 - i*0.5} ry={1.5} fill="url(#lava1)" opacity={0.7 - i*0.15}>
+            <animate attributeName="cy" values={`${16 - i*3};${8 + i};${16 - i*3}`} dur={`${2 + i*0.4}s`} repeatCount="indefinite" />
+            <animate attributeName="rx" values={`${3 - i*0.5};${2 - i*0.4};${3 - i*0.5}`} dur={`${2 + i*0.5}s`} repeatCount="indefinite" />
+          </ellipse>
+        ))}
+      </svg>
+    ),
+
+    marbleVeins: (
+      <svg viewBox="0 0 24 24" className={className} fill="none">
+        <defs>
+          <linearGradient id="marble1">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="100%" stopColor="#cfd8ff" />
+          </linearGradient>
+        </defs>
+        {[...Array(5)].map((_,i)=> (
+          <path key={i} d={`M2 ${4+i*4} C 8 ${2+i*2}, 16 ${6+i*2}, 22 ${4+i*4}`} stroke="url(#marble1)" strokeWidth={0.7} opacity={0.4}>
+            <animate attributeName="d" values={`M2 ${4+i*4} C 8 ${2+i*2}, 16 ${6+i*2}, 22 ${4+i*4};M2 ${4+i*4} C 8 ${4+i*2}, 16 ${8+i*2}, 22 ${4+i*4};M2 ${4+i*4} C 8 ${2+i*2}, 16 ${6+i*2}, 22 ${4+i*4}`} dur={`${3 + i*0.3}s`} repeatCount="indefinite" />
+          </path>
+        ))}
+      </svg>
+    ),
+
+    gradientTunnel: (
+      <svg viewBox="0 0 24 24" className={className} fill="none">
+        {[...Array(5)].map((_, i) => (
+          <circle key={i} cx="12" cy="12" r={4 + i*2} stroke="hsl(260,80%,60%)" opacity={0.6 - i*0.1}>
+            <animateTransform attributeName="transform" type="rotate" values={`0 12 12;${i%2===0?360:-360} 12 12`} dur={`${2 + i*0.4}s`} repeatCount="indefinite" />
+          </circle>
+        ))}
+      </svg>
+    ),
+
+    windTunnel: (
+      <svg viewBox="0 0 24 24" className={className} fill="none">
+        {[...Array(6)].map((_, i) => (
+          <path key={i} d={`M2 ${4+i*3} Q 12 ${2+i*2}, 22 ${4+i*3}`} stroke="hsl(200,90%,70%)" opacity={0.6}>
+            <animate attributeName="d" values={`M2 ${4+i*3} Q 12 ${2+i*2}, 22 ${4+i*3};M2 ${4+i*3} Q 12 ${6+i*2}, 22 ${4+i*3};M2 ${4+i*3} Q 12 ${2+i*2}, 22 ${4+i*3}`} dur={`${1 + i*0.2}s`} repeatCount="indefinite" />
+          </path>
+        ))}
+      </svg>
+    ),
+
+    bioGoo: (
+      <svg viewBox="0 0 24 24" className={className} fill="none">
+        {[...Array(4)].map((_, i) => (
+          <path key={i} d={`M4 ${6+i*3} C 8 ${8+i*2}, 16 ${4+i*2}, 20 ${6+i*3}`} stroke="hsl(150,80%,60%)" opacity={0.5}>
+            <animate attributeName="d" values={`M4 ${6+i*3} C 8 ${8+i*2}, 16 ${4+i*2}, 20 ${6+i*3};M4 ${6+i*3} C 8 ${10+i*2}, 16 ${6+i*2}, 20 ${6+i*3};M4 ${6+i*3} C 8 ${8+i*2}, 16 ${4+i*2}, 20 ${6+i*3}`} dur={`${1.8 + i*0.3}s`} repeatCount="indefinite" />
+          </path>
+        ))}
+      </svg>
+    ),
+
+    waterCaustics: (
+      <svg viewBox="0 0 24 24" className={className} fill="none">
+        {[...Array(6)].map((_, i) => (
+          <circle key={i} cx="12" cy="12" r={2 + i} stroke="hsl(195,90%,60%)" opacity={0.5 - i*0.06}>
+            <animate attributeName="r" values={`${2 + i};${3 + i};${2 + i}`} dur={`${1.5 + i*0.2}s`} repeatCount="indefinite" />
+          </circle>
+        ))}
+      </svg>
     )
   };
 

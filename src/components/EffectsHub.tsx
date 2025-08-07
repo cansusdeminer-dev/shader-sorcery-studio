@@ -34,9 +34,24 @@ function ShaderBackground({ effectKey, isPlaying, settings }) {
       }
       
       // Apply dynamic settings
-      Object.keys(settings).forEach(key => {
+      Object.keys(settings).forEach((key) => {
         if (material.uniforms[key]) {
-          material.uniforms[key].value = settings[key];
+          const target = material.uniforms[key];
+          const val = settings[key];
+          // Coerce types safely for GLSL uniforms
+          if (Array.isArray(val)) {
+            // vec2/vec3/vec4 as arrays [0..1]
+            target.value = val;
+          } else if (typeof val === 'boolean') {
+            // Booleans -> floats (1/0) for shaders that expect float toggles
+            if (typeof target.value === 'number') {
+              target.value = val ? 1 : 0;
+            } else {
+              target.value = val;
+            }
+          } else {
+            target.value = val as any;
+          }
         }
       });
     }
