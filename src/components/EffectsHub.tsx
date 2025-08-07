@@ -117,17 +117,26 @@ export default function EffectsHub() {
         />
       </Canvas>
 
-      {/* Control Panel */}
-      <ControlPanel
-        currentEffect={currentEffect}
-        setCurrentEffect={setCurrentEffect}
-        isPlaying={isPlaying}
-        setIsPlaying={setIsPlaying}
-        settings={settings}
-        setSettings={setSettings}
-        selectedCategory={selectedCategory}
-        setSelectedCategory={setSelectedCategory}
-      />
+      {/* Sidebar Control Panel */}
+      <SidebarProvider>
+        <Sidebar className="absolute left-0 top-0 h-full" collapsible="icon">
+          <SidebarContent>
+            <EffectsControlPanel
+              currentEffect={currentEffect}
+              setCurrentEffect={setCurrentEffect}
+              isPlaying={isPlaying}
+              setIsPlaying={setIsPlaying}
+              settings={settings}
+              setSettings={setSettings}
+              selectedCategory={selectedCategory}
+              setSelectedCategory={setSelectedCategory}
+            />
+          </SidebarContent>
+          <SidebarRail />
+        </Sidebar>
+        {/* Global trigger that remains visible */}
+        <SidebarTrigger className="absolute top-4 left-4 z-20" />
+      </SidebarProvider>
 
       {/* Interactive Hint */}
       <div className="absolute bottom-6 right-6 z-10">
