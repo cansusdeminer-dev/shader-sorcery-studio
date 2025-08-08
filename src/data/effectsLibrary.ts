@@ -683,7 +683,7 @@ export const EFFECTS_LIBRARY: Record<string, Effect> = {
   lavaLamp: {
     name: 'Lava Lamp',
     icon: 'lavaLamp',
-    description: 'Metaballs drifting in viscous fluid',
+    description: 'Metaballs drifting in viscous fluid (advanced)',
     category: 'organic',
     vertexShader: `
       varying vec2 vUv;
@@ -695,59 +695,304 @@ export const EFFECTS_LIBRARY: Record<string, Effect> = {
     fragmentShader: `
       uniform float uTime;
       uniform float uSpeed;
-      uniform float uBlobSize;
-      uniform float uViscosity;
+      uniform float uBlobCount;
+      uniform float uBlobSizeBase;
+      uniform float uBlobSizeVar;
+      uniform float uBlobJitter;
+      uniform float uDriftAmp;
+      uniform float uDriftFreq;
       uniform float uGravity;
+      uniform float uIsoLevel;
+      uniform float uEdgeSoftness;
+      uniform float uAspect;
+      uniform float uNoiseScale;
+      uniform float uDistort;
+      uniform float uHueA;
+      uniform float uHueB;
+      uniform float uBrightness;
       uniform float uIntensity;
       varying vec2 vUv;
 
-      float circle(vec2 p, vec2 c, float r) {
-        return r / length(p - c);
+      float hash(float n) { return fract(sin(n) * 43758.5453123); }
+      float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+      float noise(vec2 p){
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        float a = hash2(i);
+        float b = hash2(i + vec2(1.0, 0.0));
+        float c = hash2(i + vec2(0.0, 1.0));
+        float d = hash2(i + vec2(1.0, 1.0));
+        vec2 u = f*f*(3.0-2.0*f);
+        return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+      }
+      float fbm(vec2 p){ float v=0.0; float a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.0; a*=0.5;} return v; }
+
+      vec3 hsv2rgb(vec3 c){
+        vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
       }
 
       void main() {
-        vec2 st = vUv;
+        vec2 uv = vUv;
         float t = uTime * uSpeed;
 
-        // Animated blob centers (6 blobs)
-        vec2 c0 = vec2(0.5 + 0.25*sin(t*0.7), 0.5 + 0.25*cos(t*0.5));
-        vec2 c1 = vec2(0.5 + 0.28*sin(t*0.9+1.0), 0.5 + 0.22*cos(t*0.6+2.0));
-        vec2 c2 = vec2(0.5 + 0.22*sin(t*0.6+3.0), 0.5 + 0.28*cos(t*0.8+4.0));
-        vec2 c3 = vec2(0.5 + 0.20*sin(t*0.5+5.0), 0.5 + 0.25*cos(t*0.7+6.0));
-        vec2 c4 = vec2(0.5 + 0.24*sin(t*1.1+7.0), 0.5 + 0.20*cos(t*0.9+8.0));
-        vec2 c5 = vec2(0.5 + 0.26*sin(t*0.8+9.0), 0.5 + 0.24*cos(t*0.7+10.0));
+        // Aspect correction
+        vec2 st = uv * vec2(uAspect, 1.0);
 
-        // Gravity stretch
-        st.y += sin(st.x*6.2831 + t*0.2) * (0.02*uGravity);
+        // Subtle fluid distortion
+        if(uDistort > 0.0) {
+          float n = fbm(st * uNoiseScale + t*0.2);
+          st += (n - 0.5) * 0.06 * uDistort;
+        }
 
+        // Gravity warp
+        st.y += sin(st.x * 6.2831 + t*0.2) * (0.02 * uGravity);
+
+        // Metaball field accumulation
         float field = 0.0;
-        field += circle(st, c0, uBlobSize);
-        field += circle(st, c1, uBlobSize*0.9);
-        field += circle(st, c2, uBlobSize*1.1);
-        field += circle(st, c3, uBlobSize*0.8);
-        field += circle(st, c4, uBlobSize);
-        field += circle(st, c5, uBlobSize*1.2);
+        for(int i = 0; i < 64; i++){
+          float fi = float(i);
+          if(fi >= uBlobCount) break;
+          float seed = fi * 12.9898;
+          float r = uBlobSizeBase + uBlobSizeVar * hash(seed*3.7);
+          // Base orbit
+          vec2 dir = normalize(vec2(hash(seed) - 0.5, hash(seed*1.3) - 0.5) + 1e-6);
+          vec2 c = vec2(0.5) + dir * (0.25 + 0.05 * sin(seed));
+          // Drift and jitter
+          c += vec2(
+            sin(uDriftFreq * t + seed) ,
+            cos(uDriftFreq * t * 0.9 + seed*1.7)
+          ) * (0.18 * uDriftAmp);
+          c += vec2(
+            sin(t*1.7 + seed*2.1),
+            cos(t*1.3 + seed*2.7)
+          ) * (0.02 * uBlobJitter);
 
-        // Smooth thresholding
-        float iso = smoothstep(1.2 - uViscosity, 1.2 + uViscosity, field);
-        vec3 col = mix(vec3(0.02,0.0,0.05), vec3(1.0,0.2,0.6), iso) * uIntensity;
+          vec2 p = st;
+          float d = length(p - c);
+          field += r / (d + 1e-3);
+        }
+
+        // Thresholding
+        float iso = smoothstep(uIsoLevel - uEdgeSoftness, uIsoLevel + uEdgeSoftness, field);
+
+        // Color ramp between two hues
+        float hue = mix(uHueA, uHueB, iso);
+        vec3 col = hsv2rgb(vec3(fract(hue), 0.85, (0.6 + 0.4*iso) * uBrightness));
+        col *= uIntensity;
+
         gl_FragColor = vec4(col, 1.0);
       }
     `,
     uniforms: {
       uTime: { value: 0 },
-      uSpeed: { value: 0.6 },
-      uBlobSize: { value: 0.08 },
-      uViscosity: { value: 0.1 },
+      uSpeed: { value: 0.8 },
+      uBlobCount: { value: 16.0 },
+      uBlobSizeBase: { value: 0.08 },
+      uBlobSizeVar: { value: 0.04 },
+      uBlobJitter: { value: 1.0 },
+      uDriftAmp: { value: 0.8 },
+      uDriftFreq: { value: 1.0 },
       uGravity: { value: 0.8 },
+      uIsoLevel: { value: 1.2 },
+      uEdgeSoftness: { value: 0.12 },
+      uAspect: { value: 1.0 },
+      uNoiseScale: { value: 3.0 },
+      uDistort: { value: 0.2 },
+      uHueA: { value: 0.92 },
+      uHueB: { value: 0.08 },
+      uBrightness: { value: 1.0 },
       uIntensity: { value: 1.0 },
     },
     settings: [
-      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.1, max: 2.0, step: 0.05, default: 0.6 },
-      { name: 'Blob Size', key: 'uBlobSize', type: 'slider', min: 0.03, max: 0.2, step: 0.005, default: 0.08 },
-      { name: 'Viscosity', key: 'uViscosity', type: 'slider', min: 0.02, max: 0.3, step: 0.01, default: 0.1 },
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.05, max: 3.0, step: 0.05, default: 0.8 },
+      { name: 'Blob Count', key: 'uBlobCount', type: 'slider', min: 1, max: 64, step: 1, default: 16 },
+      { name: 'Blob Size Base', key: 'uBlobSizeBase', type: 'slider', min: 0.02, max: 0.25, step: 0.005, default: 0.08 },
+      { name: 'Blob Size Variation', key: 'uBlobSizeVar', type: 'slider', min: 0.0, max: 0.2, step: 0.005, default: 0.04 },
+      { name: 'Blob Jitter', key: 'uBlobJitter', type: 'slider', min: 0.0, max: 3.0, step: 0.05, default: 1.0 },
+      { name: 'Drift Amplitude', key: 'uDriftAmp', type: 'slider', min: 0.0, max: 1.5, step: 0.05, default: 0.8 },
+      { name: 'Drift Frequency', key: 'uDriftFreq', type: 'slider', min: 0.1, max: 3.0, step: 0.05, default: 1.0 },
       { name: 'Gravity Warp', key: 'uGravity', type: 'slider', min: 0.0, max: 2.0, step: 0.05, default: 0.8 },
-      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 2.0, step: 0.1, default: 1.0 },
+      { name: 'Iso Level', key: 'uIsoLevel', type: 'slider', min: 0.6, max: 2.0, step: 0.02, default: 1.2 },
+      { name: 'Edge Softness', key: 'uEdgeSoftness', type: 'slider', min: 0.01, max: 0.5, step: 0.01, default: 0.12 },
+      { name: 'Distortion', key: 'uDistort', type: 'slider', min: 0.0, max: 1.0, step: 0.05, default: 0.2 },
+      { name: 'Noise Scale', key: 'uNoiseScale', type: 'slider', min: 1.0, max: 10.0, step: 0.5, default: 3.0 },
+      { name: 'Hue A', key: 'uHueA', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.92 },
+      { name: 'Hue B', key: 'uHueB', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.08 },
+      { name: 'Brightness', key: 'uBrightness', type: 'slider', min: 0.2, max: 2.0, step: 0.05, default: 1.0 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 2.0, step: 0.05, default: 1.0 },
+    ]
+  },
+
+  lavaLampNeon: {
+    name: 'Lava Lamp Neon',
+    icon: 'lavaLamp',
+    description: 'High‑contrast neon metaballs with glow',
+    category: 'organic',
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} 
+    `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uBlobCount; uniform float uBlobSizeBase; uniform float uBlobSizeVar; uniform float uBlobJitter; uniform float uDriftAmp; uniform float uDriftFreq; uniform float uIsoLevel; uniform float uEdgeSoftness; uniform float uNoiseScale; uniform float uDistort; uniform float uHueA; uniform float uHueB; uniform float uGlow; uniform float uIntensity; varying vec2 vUv;
+      float hash(float n){ return fract(sin(n)*43758.5453);} float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453);} 
+      float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash2(i), b=hash2(i+vec2(1,0)), c=hash2(i+vec2(0,1)), d=hash2(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;}
+      float fbm(vec2 p){ float v=0.0; float a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.0; a*=0.5;} return v; }
+      vec3 hsv2rgb(vec3 c){ vec4 K=vec4(1.,2./3.,1./3.,3.); vec3 p=abs(fract(c.xxx+K.xyz)*6. - K.www); return c.z*mix(K.xxx, clamp(p-K.xxx,0.,1.), c.y);} 
+      void main(){ vec2 st=vUv; float t=uTime*uSpeed; if(uDistort>0.0){ float n=fbm(st*uNoiseScale + t*0.2); st += (n-0.5)*0.08*uDistort; } float field=0.0; for(int i=0;i<64;i++){ float fi=float(i); if(fi>=uBlobCount) break; float seed=fi*12.9; float r=uBlobSizeBase + uBlobSizeVar*hash(seed*3.7); vec2 dir=normalize(vec2(hash(seed)-0.5, hash(seed*1.3)-0.5)+1e-6); vec2 c=vec2(0.5)+dir*(0.3); c += vec2(sin(uDriftFreq*t+seed), cos(uDriftFreq*t*0.9+seed*1.7))*(0.2*uDriftAmp); c += vec2(sin(t*1.7+seed*2.1), cos(t*1.3+seed*2.7))*(0.02*uBlobJitter);
+        field += r/(length(st-c)+1e-3);
+      }
+      float iso=smoothstep(uIsoLevel - uEdgeSoftness, uIsoLevel + uEdgeSoftness, field);
+      float hue=mix(uHueA,uHueB,iso);
+      vec3 col=hsv2rgb(vec3(fract(hue), 1.0, iso))*uIntensity; // neon sat
+      // halo glow
+      float glow = smoothstep(0.0, 1.0, field/uIsoLevel);
+      col += vec3(0.6,0.1,1.0)*pow(glow,2.0)*uGlow;
+      gl_FragColor=vec4(col,1.0);
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.2}, uBlobCount:{value:20.0}, uBlobSizeBase:{value:0.07}, uBlobSizeVar:{value:0.06}, uBlobJitter:{value:1.2}, uDriftAmp:{value:1.0}, uDriftFreq:{value:1.4}, uIsoLevel:{value:1.1}, uEdgeSoftness:{value:0.08}, uNoiseScale:{value:4.0}, uDistort:{value:0.35}, uHueA:{value:0.85}, uHueB:{value:0.15}, uGlow:{value:0.5}, uIntensity:{value:1.2} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.1, max: 3.0, step: 0.05, default: 1.2 },
+      { name: 'Blob Count', key: 'uBlobCount', type: 'slider', min: 1, max: 64, step: 1, default: 20 },
+      { name: 'Blob Size Base', key: 'uBlobSizeBase', type: 'slider', min: 0.02, max: 0.25, step: 0.005, default: 0.07 },
+      { name: 'Blob Size Variation', key: 'uBlobSizeVar', type: 'slider', min: 0.0, max: 0.2, step: 0.005, default: 0.06 },
+      { name: 'Jitter', key: 'uBlobJitter', type: 'slider', min: 0.0, max: 3.0, step: 0.05, default: 1.2 },
+      { name: 'Drift Amp', key: 'uDriftAmp', type: 'slider', min: 0.0, max: 1.5, step: 0.05, default: 1.0 },
+      { name: 'Drift Freq', key: 'uDriftFreq', type: 'slider', min: 0.1, max: 3.0, step: 0.05, default: 1.4 },
+      { name: 'Iso Level', key: 'uIsoLevel', type: 'slider', min: 0.6, max: 2.0, step: 0.02, default: 1.1 },
+      { name: 'Edge Softness', key: 'uEdgeSoftness', type: 'slider', min: 0.01, max: 0.5, step: 0.01, default: 0.08 },
+      { name: 'Distortion', key: 'uDistort', type: 'slider', min: 0.0, max: 1.0, step: 0.05, default: 0.35 },
+      { name: 'Noise Scale', key: 'uNoiseScale', type: 'slider', min: 1.0, max: 10.0, step: 0.5, default: 4.0 },
+      { name: 'Hue A', key: 'uHueA', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.85 },
+      { name: 'Hue B', key: 'uHueB', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.15 },
+      { name: 'Glow', key: 'uGlow', type: 'slider', min: 0.0, max: 1.0, step: 0.05, default: 0.5 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 2.0, step: 0.05, default: 1.2 },
+    ]
+  },
+
+  lavaLamp3DGlass: {
+    name: 'Lava Lamp 3D Glass',
+    icon: 'lavaLamp',
+    description: 'Ray‑marched 3D metaballs with glassy shading',
+    category: 'organic',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv;
+      uniform float uTime; uniform float uSpeed; uniform float uBlobCount; uniform float uRadius; uniform float uDriftAmp; uniform float uDriftFreq; uniform float uShininess; uniform float uFresnel; uniform float uLightIntensity; uniform vec3 uLightDir;
+
+      float hash(float n){ return fract(sin(n)*43758.5453);} 
+      vec3 getCenter(float i, float t){
+        float seed = i*12.9;
+        vec3 dir = normalize(vec3(hash(seed)-0.5, hash(seed*1.3)-0.5, hash(seed*2.1)-0.5)+1e-6);
+        vec3 c = dir * 0.6;
+        c += vec3(
+          sin(uDriftFreq*t + seed),
+          cos(uDriftFreq*t*0.8 + seed*1.7),
+          sin(uDriftFreq*t*1.2 + seed*2.3)
+        ) * (0.5*uDriftAmp);
+        return c;
+      }
+
+      float sdf(vec3 p, float t){
+        float field = 0.0;
+        for(int i=0;i<24;i++){
+          float fi=float(i); if(fi>=uBlobCount) break;
+          vec3 c = getCenter(fi, t);
+          float d = length(p - c);
+          field += uRadius / (d + 1e-3);
+        }
+        // Isosurface value (metaball threshold)
+        return 1.2 - field; // negative inside
+      }
+
+      vec3 calcNormal(vec3 p, float t){
+        float e = 0.002;
+        vec2 h = vec2(1.0,-1.0)*0.5773;
+        return normalize( h.xyy*sdf(p + h.xyy*e, t) +
+                          h.yyx*sdf(p + h.yyx*e, t) +
+                          h.yxy*sdf(p + h.yxy*e, t) +
+                          h.xxx*sdf(p + h.xxx*e, t) );
+      }
+
+      void main(){
+        vec2 uv = vUv * 2.0 - 1.0;
+        uv.x *= (1280.0/720.0); // mild aspect guess
+        float t = uTime * uSpeed;
+
+        // Camera
+        vec3 ro = vec3(0.0, 0.0, 2.2);
+        vec3 rd = normalize(vec3(uv, -1.8));
+
+        // Raymarch
+        float d=0.0; float total=0.0; vec3 p=ro; bool hit=false;
+        for(int i=0;i<96;i++){
+          p = ro + rd * total;
+          float sd = sdf(p, t);
+          if(sd < 0.001){ hit=true; break; }
+          float stepSize = clamp(abs(sd)*0.7, 0.01, 0.2);
+          total += stepSize;
+          if(total>6.0) break;
+        }
+
+        vec3 col = vec3(0.0);
+        if(hit){
+          vec3 n = calcNormal(p, t);
+          float ndl = max(dot(n, normalize(uLightDir)), 0.0);
+          float spec = pow(max(dot(reflect(-normalize(uLightDir), n), -rd), 0.0), uShininess);
+          float fr = pow(1.0 - max(dot(n, -rd), 0.0), uFresnel);
+          vec3 base = mix(vec3(0.1,0.0,0.2), vec3(1.0,0.4,0.8), ndl);
+          col = base * (0.2 + 0.8*ndl) * uLightIntensity + spec*0.5 + fr*0.6;
+        } else {
+          col = vec3(0.02,0.02,0.04);
+        }
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:0.8}, uBlobCount:{value:10.0}, uRadius:{value:0.35}, uDriftAmp:{value:0.8}, uDriftFreq:{value:1.0}, uShininess:{value:32.0}, uFresnel:{value:3.0}, uLightIntensity:{value:1.0}, uLightDir:{ value: [ -0.3, 0.8, 0.5 ] } },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.1, max: 2.5, step: 0.05, default: 0.8 },
+      { name: 'Blob Count', key: 'uBlobCount', type: 'slider', min: 1, max: 24, step: 1, default: 10 },
+      { name: 'Radius', key: 'uRadius', type: 'slider', min: 0.1, max: 0.7, step: 0.02, default: 0.35 },
+      { name: 'Drift Amp', key: 'uDriftAmp', type: 'slider', min: 0.0, max: 1.5, step: 0.05, default: 0.8 },
+      { name: 'Drift Freq', key: 'uDriftFreq', type: 'slider', min: 0.1, max: 3.0, step: 0.05, default: 1.0 },
+      { name: 'Shininess', key: 'uShininess', type: 'slider', min: 4, max: 128, step: 1, default: 32 },
+      { name: 'Fresnel', key: 'uFresnel', type: 'slider', min: 0.5, max: 6.0, step: 0.1, default: 3.0 },
+      { name: 'Light Intensity', key: 'uLightIntensity', type: 'slider', min: 0.2, max: 2.5, step: 0.05, default: 1.0 },
+    ]
+  },
+
+  lavaLampBubbles: {
+    name: 'Lava Lamp Bubbles',
+    icon: 'lavaLamp',
+    description: 'Bubble‑style blobby fluid with outlines',
+    category: 'organic',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uBlobCount; uniform float uBlobSizeBase; uniform float uBlobSizeVar; uniform float uRise; uniform float uOutline; uniform float uHue; uniform float uIntensity; varying vec2 vUv;
+      float hash(float n){ return fract(sin(n)*43758.5453);} 
+      void main(){ vec2 st=vUv; float t=uTime*uSpeed; float field=0.0; for(int i=0;i<64;i++){ float fi=float(i); if(fi>=uBlobCount) break; float seed=fi*17.3; float r=uBlobSizeBase + uBlobSizeVar*hash(seed*3.1); vec2 c=vec2(fract(hash(seed*1.7)), fract(hash(seed*2.1))); c.y = fract(c.y + t*0.05*uRise); c = 0.2 + 0.6*c; field += r/(distance(st,c)+1e-3);} 
+        float iso = smoothstep(1.0, 1.1, field);
+        float edge = smoothstep(1.1, 1.1+uOutline, field) - smoothstep(1.1+uOutline, 1.2+uOutline, field);
+        vec3 base = vec3(0.02,0.06,0.1);
+        float hue = uHue + 0.1*iso;
+        vec3 bubble = vec3(0.2+0.8*iso, 0.8, 1.0);
+        vec3 col = mix(base, bubble, iso) + edge*vec3(0.9,1.0,1.0);
+        col *= uIntensity; gl_FragColor=vec4(col,1.0);
+      }
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uBlobCount:{value:24.0}, uBlobSizeBase:{value:0.05}, uBlobSizeVar:{value:0.03}, uRise:{value:1.0}, uOutline:{value:0.06}, uHue:{value:0.55}, uIntensity:{value:1.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.1, max: 3.0, step: 0.05, default: 1.0 },
+      { name: 'Bubble Count', key: 'uBlobCount', type: 'slider', min: 1, max: 64, step: 1, default: 24 },
+      { name: 'Bubble Size', key: 'uBlobSizeBase', type: 'slider', min: 0.02, max: 0.2, step: 0.005, default: 0.05 },
+      { name: 'Size Variation', key: 'uBlobSizeVar', type: 'slider', min: 0.0, max: 0.15, step: 0.005, default: 0.03 },
+      { name: 'Rise Speed', key: 'uRise', type: 'slider', min: 0.2, max: 3.0, step: 0.05, default: 1.0 },
+      { name: 'Outline', key: 'uOutline', type: 'slider', min: 0.0, max: 0.2, step: 0.005, default: 0.06 },
+      { name: 'Hue', key: 'uHue', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.55 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 2.0, step: 0.05, default: 1.0 },
     ]
   },
 
