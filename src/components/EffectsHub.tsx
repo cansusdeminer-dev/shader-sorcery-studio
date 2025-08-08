@@ -73,10 +73,17 @@ function ShaderBackground({ effectKey, isPlaying, settings }) {
 
   if (!effect) return null;
 
+  const clonedUniforms: any = {};
+  Object.keys(effect.uniforms).forEach((k) => {
+    const u = effect.uniforms[k];
+    const v = (u && 'value' in u) ? u.value : u;
+    clonedUniforms[k] = { value: Array.isArray(v) ? [...v] : (typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v) };
+  });
+
   const shaderMaterial = new THREE.ShaderMaterial({
     vertexShader: effect.vertexShader,
     fragmentShader: effect.fragmentShader,
-    uniforms: { ...effect.uniforms }
+    uniforms: clonedUniforms
   });
 
   return (

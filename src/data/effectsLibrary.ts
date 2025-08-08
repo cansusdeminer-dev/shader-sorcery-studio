@@ -873,6 +873,215 @@ export const EFFECTS_LIBRARY: Record<string, Effect> = {
     ]
   }
 
+,
+  // ——— New batch of advanced effects ———
+  crystalGrowth: {
+    name: 'Crystal Growth',
+    icon: 'crystalGrowth',
+    description: 'Procedural crystal seeds expanding with facets',
+    category: 'crystal',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uSharp; uniform float uScale; uniform float uHue; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453);} 
+      float voronoi(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float m=8.0; for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){ vec2 g=vec2(float(x),float(y)); vec2 o=vec2(hash(i+g), hash(i+g+1.23)); o=0.5+0.5*sin(uTime*uSpeed+6.2831*o); vec2 r=g+o-f; float d=dot(r,r); m=min(m,d);} return m; }
+      vec3 hsv2rgb(vec3 c){ vec4 K=vec4(1.,2./3.,1./3.,3.); vec3 p=abs(fract(c.xxx+K.xyz)*6.-K.www); return c.z*mix(K.xxx, clamp(p-K.xxx,0.,1.), c.y);} 
+      void main(){ vec2 st=(vUv-0.5)*uScale; float v=voronoi(st); float edge=smoothstep(uSharp,0.0,v); vec3 col = hsv2rgb(vec3(uHue+v*0.2, 0.6, edge)); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uSharp:{value:0.04}, uScale:{value:6.0}, uHue:{value:0.65} },
+    settings: [
+      { name: 'Growth Speed', key: 'uSpeed', type: 'slider', min: 0.1, max: 4.0, step: 0.1, default: 1.0 },
+      { name: 'Edge Sharpness', key: 'uSharp', type: 'slider', min: 0.005, max: 0.2, step: 0.005, default: 0.04 },
+      { name: 'Scale', key: 'uScale', type: 'slider', min: 2.0, max: 12.0, step: 0.5, default: 6.0 },
+      { name: 'Hue', key: 'uHue', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.65 }
+    ]
+  },
+
+  metallicIridescence: {
+    name: 'Metallic Iridescence',
+    icon: 'metallicIridescence',
+    description: 'Thin‑film interference rainbow sheen',
+    category: 'distortion',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uRoughness; uniform float uHueShift; uniform float uIntensity; varying vec2 vUv;
+      vec3 hsv2rgb(vec3 c){ vec4 K=vec4(1.,2./3.,1./3.,3.); vec3 p=abs(fract(c.xxx+K.xyz)*6.-K.www); return c.z*mix(K.xxx, clamp(p-K.xxx,0.,1.), c.y);} 
+      void main(){ vec2 st=vUv-0.5; float t=uTime*uSpeed; float angle=atan(st.y,st.x); float rad=length(st); float film = sin(30.0*rad + 8.0*angle + t*2.0); float micro = sin((st.x*st.y)*150.0 + t*3.0)*uRoughness; 
+        float hue = fract(uHueShift + film*0.15 + micro*0.05);
+        vec3 col = hsv2rgb(vec3(hue, 0.9, (0.6+0.4*sin(film))*uIntensity)); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uRoughness:{value:0.4}, uHueShift:{value:0.0}, uIntensity:{value:1.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 4.0, step: 0.1, default: 1.0 },
+      { name: 'Micro Roughness', key: 'uRoughness', type: 'slider', min: 0.0, max: 1.0, step: 0.05, default: 0.4 },
+      { name: 'Hue Shift', key: 'uHueShift', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.0 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.3, max: 2.0, step: 0.05, default: 1.0 }
+    ]
+  },
+
+  smokeVortex: {
+    name: 'Smoke Vortex',
+    icon: 'smokeVortex',
+    description: 'FBM smoke swirling into a vortex',
+    category: 'particle',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uSwirl; uniform float uDensity; uniform float uBrightness; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453);} 
+      float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1,0)); float c=hash(i+vec2(0,1)); float d=hash(i+vec2(1,1)); vec2 u=f*f*(3.-2.*f); return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y; }
+      float fbm(vec2 p){ float v=0.; float a=0.5; for(int i=0;i<6;i++){ v+=a*noise(p); p*=2.; a*=0.5;} return v; }
+      void main(){ vec2 st=vUv-0.5; float t=uTime*uSpeed; float ang=atan(st.y,st.x); float r=length(st); ang += r*uSwirl + t*0.5; vec2 uv = vec2(cos(ang), sin(ang))*r * uDensity; float d = fbm(uv + fbm(uv+t*0.2)); float smoke = smoothstep(0.4,1.0,d);
+        vec3 col = mix(vec3(0.02,0.02,0.03), vec3(0.9), smoke*uBrightness); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uSwirl:{value:3.0}, uDensity:{value:2.0}, uBrightness:{value:0.7} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.2, max: 3.0, step: 0.1, default: 1.0 },
+      { name: 'Swirl', key: 'uSwirl', type: 'slider', min: 0.0, max: 8.0, step: 0.2, default: 3.0 },
+      { name: 'Density', key: 'uDensity', type: 'slider', min: 0.5, max: 6.0, step: 0.2, default: 2.0 },
+      { name: 'Brightness', key: 'uBrightness', type: 'slider', min: 0.2, max: 1.5, step: 0.05, default: 0.7 }
+    ]
+  },
+
+  sandRipples: {
+    name: 'Sand Ripples',
+    icon: 'sandRipples',
+    description: 'Wind‑shaped dune ripples interference',
+    category: 'organic',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uAmplitude; uniform float uSpacing; uniform float uAngle; varying vec2 vUv;
+      mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c);} 
+      void main(){ vec2 st=vUv*2.0; st = rot(uAngle) * (st-vec2(1.0)); float t=uTime*uSpeed; float wave1 = sin(st.x*uSpacing + t*2.0);
+        float wave2 = sin(st.x*uSpacing*0.7 + st.y*0.3 + t*1.2);
+        float h = wave1*0.6 + wave2*0.4; vec3 col = mix(vec3(0.85,0.78,0.65), vec3(0.93,0.88,0.76), 0.5 + 0.5*h*uAmplitude); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:0.6}, uAmplitude:{value:0.8}, uSpacing:{value:18.0}, uAngle:{value:0.2} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 2.0, step: 0.05, default: 0.6 },
+      { name: 'Amplitude', key: 'uAmplitude', type: 'slider', min: 0.0, max: 2.0, step: 0.05, default: 0.8 },
+      { name: 'Spacing', key: 'uSpacing', type: 'slider', min: 6, max: 40, step: 1, default: 18 },
+      { name: 'Angle', key: 'uAngle', type: 'slider', min: -1.57, max: 1.57, step: 0.01, default: 0.2 }
+    ]
+  },
+
+  lsystemBranches: {
+    name: 'L‑System Branches',
+    icon: 'lsystemBranches',
+    description: 'Recursive branching kaleidoscope',
+    category: 'fractal',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uSegments; uniform float uDepth; varying vec2 vUv;
+      float branch(vec2 p){ float a=atan(p.y,p.x); float r=length(p); float k=abs(fract(a/6.2831*uSegments)*2.0-1.0); return smoothstep(0.0, 0.02, 0.02-k*r); }
+      void main(){ vec2 st=(vUv-0.5)*2.0; float t=uTime*uSpeed; float s=1.0; float acc=0.0; for(int i=0;i<12;i++){ st=mat2(cos(0.5),-sin(0.5),sin(0.5),cos(0.5))*st*1.1 + 0.05*vec2(sin(t+i), cos(t*0.7+i)); acc += branch(st)*pow(0.9, float(i)); if(float(i)>uDepth) break; }
+        vec3 col = mix(vec3(0.02,0.01,0.03), vec3(0.6,1.0,0.8), acc); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:0.6}, uSegments:{value:8.0}, uDepth:{value:8.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 2.0, step: 0.05, default: 0.6 },
+      { name: 'Segments', key: 'uSegments', type: 'slider', min: 4, max: 24, step: 1, default: 8 },
+      { name: 'Depth', key: 'uDepth', type: 'slider', min: 3, max: 12, step: 1, default: 8 }
+    ]
+  },
+
+  proteinFold: {
+    name: 'Protein Fold',
+    icon: 'proteinFold',
+    description: 'Iterated folding space map',
+    category: 'organic',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uIter; uniform float uFold; varying vec2 vUv;
+      vec2 fold(vec2 p){ p=abs(p); p = p*mat2(0.8, -0.6, 0.6, 0.8); return p-0.3; }
+      void main(){ vec2 z=(vUv-0.5)*2.0; float t=uTime*uSpeed; z*=0.7+0.3*sin(t*0.5); float m=0.0; for(int i=0;i<24;i++){ if(float(i)>uIter) break; z = mix(z, fold(z), uFold); m += exp(-length(z)*2.0); }
+        vec3 col = vec3(0.2,0.9,0.8)*m; gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uIter:{value:12.0}, uFold:{value:0.7} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 3.0, step: 0.1, default: 1.0 },
+      { name: 'Iterations', key: 'uIter', type: 'slider', min: 4, max: 24, step: 1, default: 12 },
+      { name: 'Fold Strength', key: 'uFold', type: 'slider', min: 0.0, max: 1.0, step: 0.05, default: 0.7 }
+    ]
+  },
+
+  muscleFibers: {
+    name: 'Muscle Fibers',
+    icon: 'muscleFibers',
+    description: 'Anisotropic striations with flex',
+    category: 'organic',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uStriation; uniform float uFlex; uniform float uTension; varying vec2 vUv;
+      void main(){ vec2 st=vUv; float t=uTime*uSpeed; st.y += sin(st.x*8.0 + t*2.0)*0.05*uFlex; float stripes = 0.5+0.5*sin(st.x*uStriation + t*3.0); float tension = 0.5+0.5*sin(st.y*10.0 + t*4.0)*uTension; 
+        vec3 col = mix(vec3(0.6,0.1,0.2), vec3(1.0,0.4,0.5), stripes)* (0.7+0.3*tension); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uStriation:{value:40.0}, uFlex:{value:1.0}, uTension:{value:0.6} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 3.0, step: 0.1, default: 1.0 },
+      { name: 'Striation', key: 'uStriation', type: 'slider', min: 10, max: 120, step: 2, default: 40 },
+      { name: 'Flex', key: 'uFlex', type: 'slider', min: 0.0, max: 2.0, step: 0.05, default: 1.0 },
+      { name: 'Tension', key: 'uTension', type: 'slider', min: 0.0, max: 1.0, step: 0.05, default: 0.6 }
+    ]
+  },
+
+  materialBend: {
+    name: 'Material Bend',
+    icon: 'materialBend',
+    description: 'Curvature gradient bending',
+    category: 'distortion',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uBendX; uniform float uBendY; varying vec2 vUv; 
+      void main(){ vec2 st=vUv-0.5; float bx = st.x*st.x*uBendX; float by = st.y*st.y*uBendY; float shade = 0.5 + 0.5*(bx - by); vec3 col = mix(vec3(0.1,0.1,0.15), vec3(0.9,0.9,1.0), shade); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uBendX:{value:1.0}, uBendY:{value:1.0} },
+    settings: [
+      { name: 'Bend X', key: 'uBendX', type: 'slider', min: -4.0, max: 4.0, step: 0.1, default: 1.0 },
+      { name: 'Bend Y', key: 'uBendY', type: 'slider', min: -4.0, max: 4.0, step: 0.1, default: 1.0 }
+    ]
+  },
+
+  fractalKaleidoscope: {
+    name: 'Fractal Kaleidoscope',
+    icon: 'fractalKaleidoscope',
+    description: 'Segmented kaleidoscopic fractal zoom',
+    category: 'fractal',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uSegments; uniform float uZoom; varying vec2 vUv;
+      vec2 kale(vec2 p){ float a=atan(p.y,p.x); float r=length(p); float seg=6.2831/uSegments; a = mod(a, seg); a = abs(a - seg*0.5); return vec2(cos(a), sin(a))*r; }
+      void main(){ vec2 st=(vUv-0.5)*2.0; float t=uTime*uSpeed; st *= (1.0 + 0.2*sin(t*0.5))*uZoom; vec2 k=kale(st); float rings = sin(length(k)*20.0 - t*3.0); float v = smoothstep(-0.1,0.8,rings);
+        vec3 col = mix(vec3(0.02,0.02,0.05), vec3(0.8,0.5,1.0), v); gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uSegments:{value:8.0}, uZoom:{value:1.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 4.0, step: 0.1, default: 1.0 },
+      { name: 'Segments', key: 'uSegments', type: 'slider', min: 4, max: 24, step: 1, default: 8 },
+      { name: 'Zoom', key: 'uZoom', type: 'slider', min: 0.5, max: 2.0, step: 0.05, default: 1.0 }
+    ]
+  },
+
+  starNursery: {
+    name: 'Star Nursery',
+    icon: 'starNursery',
+    description: 'Stellar birth clouds with twinkles',
+    category: 'cosmic',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uSpeed; uniform float uStarDensity; uniform float uTwinkle; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453123);} 
+      void main(){ vec2 st=vUv*vec2(200.0, 200.0); float t=uTime*uSpeed; float stars=0.0; for(int i=0;i<4;i++){ vec2 cell=floor(st*pow(0.5,float(i))); stars += step(0.995, hash(cell+1.23))* (0.5+0.5*sin(t*uTwinkle + hash(cell)*6.2831)); }
+        vec3 neb = vec3(0.02,0.02,0.06) + vec3(0.2,0.1,0.4)*sin(vUv.x*6.0 + t*0.3) + vec3(0.1,0.2,0.3)*sin(vUv.y*5.0 - t*0.2);
+        vec3 col = neb + vec3(stars)*uStarDensity; gl_FragColor=vec4(col,1.0);} 
+    `,
+    uniforms: { uTime:{value:0}, uSpeed:{value:1.0}, uStarDensity:{value:0.8}, uTwinkle:{value:3.0} },
+    settings: [
+      { name: 'Speed', key: 'uSpeed', type: 'slider', min: 0.0, max: 3.0, step: 0.1, default: 1.0 },
+      { name: 'Star Density', key: 'uStarDensity', type: 'slider', min: 0.2, max: 2.0, step: 0.05, default: 0.8 },
+      { name: 'Twinkle', key: 'uTwinkle', type: 'slider', min: 0.5, max: 8.0, step: 0.1, default: 3.0 }
+    ]
+  }
+
 };
 
 export const EFFECT_CATEGORIES = {
