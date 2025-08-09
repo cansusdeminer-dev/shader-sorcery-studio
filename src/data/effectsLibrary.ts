@@ -1325,6 +1325,148 @@ export const EFFECTS_LIBRARY: Record<string, Effect> = {
       { name: 'Star Density', key: 'uStarDensity', type: 'slider', min: 0.2, max: 2.0, step: 0.05, default: 0.8 },
       { name: 'Twinkle', key: 'uTwinkle', type: 'slider', min: 0.5, max: 8.0, step: 0.1, default: 3.0 }
     ]
+  },
+
+  // BACKGROUNDS CATEGORY
+  softGradientLight: {
+    name: 'Soft Gradient Light',
+    icon: 'cosmicAurora',
+    description: 'Beautiful soft directional/radial gradient with light controls',
+    category: 'backgrounds',
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+    `,
+    fragmentShader: `
+      uniform float uTime; uniform float uIntensity; uniform float uRadius; uniform float uLightAngleDeg; uniform float uAzimuthDeg; 
+      uniform float uLayerCount; uniform float uNoiseStrength; uniform float uNoiseScale; uniform float uNoiseSpeed; uniform float uGamma;
+      uniform float uLightX; uniform float uLightY; uniform vec3 uColor1; uniform vec3 uColor2; uniform vec3 uColor3; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7)))*43758.5453123);} 
+      float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1.,0.)); float c=hash(i+vec2(0.,1.)); float d=hash(i+vec2(1.,1.)); vec2 u=f*f*(3.-2.*f); return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y; }
+      float fbm(vec2 p){ float v=0.; float a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.; a*=0.5; } return v; }
+      void main(){ vec2 st=vUv; vec2 lightPos=vec2(uLightX,uLightY); float ang=radians(uLightAngleDeg); vec2 dir=vec2(cos(ang), sin(ang));
+        // Azimuth tilt (fake 3D) by skewing Y based on X
+        float az=radians(uAzimuthDeg); vec2 st2 = st; st2.y += (st.x-0.5)*tan(az)*0.25; 
+        float d = distance(st2, lightPos);
+        float radial = 1.0 - smoothstep(0.0, max(0.0001,uRadius), d);
+        vec2 toPix = normalize(st2 - lightPos + 1e-5);
+        float directional = clamp(dot(normalize(dir), toPix)*0.5 + 0.5, 0.0, 1.0);
+        float t = clamp(radial*0.7 + directional*0.3, 0.0, 1.0);
+        // Layered subtle banding with animated fbm
+        float bands = 0.0; vec2 q = st2 * uNoiseScale; float time = uTime * uNoiseSpeed; 
+        for(int i=0;i<5;i++){
+          float active = step(float(i), max(0.0, uLayerCount-1.0));
+          float n = fbm(q + float(i)*2.37 + time);
+          bands += active * (sin(t*3.1415*float(i+1) + n*3.0) * 0.5 + 0.5);
+        }
+        bands /= max(1.0, uLayerCount);
+        float mixT = clamp(t + bands * uNoiseStrength * 0.5, 0.0, 1.0);
+        vec3 base = mix(uColor1, uColor2, mixT);
+        vec3 col = mix(base, uColor3, smoothstep(0.6, 1.0, mixT));
+        col *= uIntensity;
+        col = pow(col, vec3(1.0/(0.0001+uGamma)));
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    uniforms: {
+      uTime: { value: 0 }, uIntensity: { value: 1.0 }, uRadius: { value: 0.6 }, uLightAngleDeg: { value: 45.0 }, uAzimuthDeg: { value: 0.0 },
+      uLayerCount: { value: 3.0 }, uNoiseStrength: { value: 0.3 }, uNoiseScale: { value: 3.0 }, uNoiseSpeed: { value: 0.4 }, uGamma: { value: 1.0 },
+      uLightX: { value: 0.3 }, uLightY: { value: 0.4 },
+      uColor1: { value: [0.10, 0.12, 0.25] }, uColor2: { value: [0.35, 0.60, 1.00] }, uColor3: { value: [1.00, 0.85, 0.60] }
+    },
+    settings: [
+      { name: 'Light Angle', key: 'uLightAngleDeg', type: 'slider', min: 0, max: 360, step: 1, default: 45 },
+      { name: 'Azimuth', key: 'uAzimuthDeg', type: 'slider', min: -60, max: 60, step: 1, default: 0 },
+      { name: 'Light X', key: 'uLightX', type: 'slider', min: 0, max: 1, step: 0.01, default: 0.3 },
+      { name: 'Light Y', key: 'uLightY', type: 'slider', min: 0, max: 1, step: 0.01, default: 0.4 },
+      { name: 'Radius', key: 'uRadius', type: 'slider', min: 0.05, max: 1.2, step: 0.01, default: 0.6 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 3.0, step: 0.05, default: 1.0 },
+      { name: 'Layers', key: 'uLayerCount', type: 'slider', min: 1, max: 5, step: 1, default: 3 },
+      { name: 'Noise Strength', key: 'uNoiseStrength', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.3 },
+      { name: 'Noise Scale', key: 'uNoiseScale', type: 'slider', min: 0.5, max: 10.0, step: 0.1, default: 3.0 },
+      { name: 'Noise Speed', key: 'uNoiseSpeed', type: 'slider', min: 0.0, max: 5.0, step: 0.1, default: 0.4 },
+      { name: 'Gamma', key: 'uGamma', type: 'slider', min: 0.5, max: 2.5, step: 0.05, default: 1.0 },
+      { name: 'Color A', key: 'uColor1', type: 'color', default: [0.10, 0.12, 0.25] },
+      { name: 'Color B', key: 'uColor2', type: 'color', default: [0.35, 0.60, 1.00] },
+      { name: 'Accent', key: 'uColor3', type: 'color', default: [1.00, 0.85, 0.60] }
+    ]
+  },
+
+  sunriseHorizon: {
+    name: 'Sunrise Horizon',
+    icon: 'nebulaCrystal',
+    description: 'Horizon gradient with sun glow and adjustable azimuth',
+    category: 'backgrounds',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uIntensity; uniform float uSunX; uniform float uSunSize; uniform float uGlow; 
+      uniform float uHorizonY; uniform float uBandSharpness; uniform float uAzimuthDeg; uniform vec3 uSkyTop; uniform vec3 uSkyBottom; uniform vec3 uSunColor; varying vec2 vUv;
+      vec3 mix3(vec3 a, vec3 b, float t){ return a*(1.0-t)+b*t; }
+      void main(){ vec2 st = vUv; float az = radians(uAzimuthDeg); mat2 rot = mat2(cos(az), -sin(az), sin(az), cos(az)); st = (rot*(st-0.5))+0.5; 
+        float t = smoothstep(0.0, 1.0, st.y); vec3 sky = mix3(uSkyBottom, uSkyTop, pow(t, 1.2));
+        float sun = 1.0 - smoothstep(0.0, uSunSize, distance(st, vec2(uSunX, uHorizonY)));
+        float glow = exp(-distance(st, vec2(uSunX, uHorizonY))*10.0) * uGlow;
+        float bands = smoothstep(0.0, 1.0, sin((st.y - uHorizonY)*20.0) * 0.5 + 0.5);
+        bands = pow(bands, uBandSharpness);
+        vec3 col = sky + uSunColor * (sun * uIntensity + glow*0.6);
+        col = mix(col, uSunColor, bands*0.1);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    uniforms: {
+      uTime:{value:0}, uIntensity:{value:1.0}, uSunX:{value:0.5}, uSunSize:{value:0.18}, uGlow:{value:1.0},
+      uHorizonY:{value:0.35}, uBandSharpness:{value:2.0}, uAzimuthDeg:{value:0.0},
+      uSkyTop:{value:[0.05,0.10,0.25]}, uSkyBottom:{value:[0.95,0.60,0.40]}, uSunColor:{value:[1.0,0.85,0.55]}
+    },
+    settings: [
+      { name: 'Sun X', key: 'uSunX', type: 'slider', min: 0, max: 1, step: 0.01, default: 0.5 },
+      { name: 'Sun Size', key: 'uSunSize', type: 'slider', min: 0.05, max: 0.6, step: 0.01, default: 0.18 },
+      { name: 'Intensity', key: 'uIntensity', type: 'slider', min: 0.2, max: 3.0, step: 0.05, default: 1.0 },
+      { name: 'Glow', key: 'uGlow', type: 'slider', min: 0.0, max: 2.0, step: 0.05, default: 1.0 },
+      { name: 'Horizon Y', key: 'uHorizonY', type: 'slider', min: 0.0, max: 1.0, step: 0.01, default: 0.35 },
+      { name: 'Band Sharpness', key: 'uBandSharpness', type: 'slider', min: 0.5, max: 6.0, step: 0.1, default: 2.0 },
+      { name: 'Azimuth', key: 'uAzimuthDeg', type: 'slider', min: -60, max: 60, step: 1, default: 0 },
+      { name: 'Sky Top', key: 'uSkyTop', type: 'color', default: [0.05,0.10,0.25] },
+      { name: 'Sky Bottom', key: 'uSkyBottom', type: 'color', default: [0.95,0.60,0.40] },
+      { name: 'Sun Color', key: 'uSunColor', type: 'color', default: [1.0,0.85,0.55] }
+    ]
+  },
+
+  auroraGradientBands: {
+    name: 'Aurora Gradient Bands',
+    icon: 'quantumField',
+    description: 'Layered flowing gradient bands with angle, azimuth and colors',
+    category: 'backgrounds',
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `
+      uniform float uTime; uniform float uAngleDeg; uniform float uAzimuthDeg; uniform float uBandCount; uniform float uBandScale; 
+      uniform float uNoiseStrength; uniform float uNoiseSpeed; uniform vec3 uColorA; uniform vec3 uColorB; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453123);} 
+      float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1.,0.)); float c=hash(i+vec2(0.,1.)); float d=hash(i+vec2(1.,1.)); vec2 u=f*f*(3.-2.*f); return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y; }
+      float fbm(vec2 p){ float v=0.; float a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.; a*=0.5; } return v; }
+      void main(){ vec2 st=vUv-0.5; float ang=radians(uAngleDeg); mat2 rot=mat2(cos(ang),-sin(ang),sin(ang),cos(ang)); st=rot*st; st+=0.5; 
+        float az=radians(uAzimuthDeg); st.y += (st.x-0.5)*tan(az)*0.3; 
+        float t = st.x * uBandScale + fbm(st*3.0 + uTime*uNoiseSpeed)*uNoiseStrength*3.0;
+        float bands=0.0; for(int i=0;i<8;i++){ float active = step(float(i), uBandCount-1.0); bands += active * (sin(t + float(i)*0.7) * 0.5 + 0.5); }
+        bands /= max(1.0, uBandCount);
+        vec3 col = mix(uColorA, uColorB, bands);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    uniforms: {
+      uTime:{value:0}, uAngleDeg:{value:20.0}, uAzimuthDeg:{value:0.0}, uBandCount:{value:5.0}, uBandScale:{value:8.0}, uNoiseStrength:{value:0.3}, uNoiseSpeed:{value:0.5},
+      uColorA:{value:[0.1,0.2,0.6]}, uColorB:{value:[0.8,0.9,1.0]}
+    },
+    settings: [
+      { name: 'Angle', key: 'uAngleDeg', type: 'slider', min: 0, max: 360, step: 1, default: 20 },
+      { name: 'Azimuth', key: 'uAzimuthDeg', type: 'slider', min: -60, max: 60, step: 1, default: 0 },
+      { name: 'Band Count', key: 'uBandCount', type: 'slider', min: 1, max: 8, step: 1, default: 5 },
+      { name: 'Band Scale', key: 'uBandScale', type: 'slider', min: 2, max: 20, step: 1, default: 8 },
+      { name: 'Noise Strength', key: 'uNoiseStrength', type: 'slider', min: 0, max: 1, step: 0.01, default: 0.3 },
+      { name: 'Noise Speed', key: 'uNoiseSpeed', type: 'slider', min: 0, max: 3, step: 0.05, default: 0.5 },
+      { name: 'Color A', key: 'uColorA', type: 'color', default: [0.1,0.2,0.6] },
+      { name: 'Color B', key: 'uColorB', type: 'color', default: [0.8,0.9,1.0] }
+    ]
   }
 
 };
@@ -1339,5 +1481,6 @@ export const EFFECT_CATEGORIES = {
   fractal: 'Fractal & Mathematical', 
   particle: 'Particle Systems',
   quantum: 'Quantum & Physics',
-  distortion: 'Distortion & Warping'
+  distortion: 'Distortion & Warping',
+  backgrounds: 'Backgrounds & Gradients'
 };

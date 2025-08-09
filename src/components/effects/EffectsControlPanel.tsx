@@ -34,6 +34,8 @@ export default function EffectsControlPanel({
 }: EffectsControlPanelProps) {
   const currentEffectData = EFFECTS_LIBRARY[currentEffect];
 
+  const quickSection = selectedCategory === 'backgrounds' ? 'backgrounds' : 'effects';
+
   const filteredEffects = Object.entries(EFFECTS_LIBRARY).filter(([, effect]) =>
     selectedCategory === "all" || effect.category === selectedCategory
   );
@@ -158,6 +160,17 @@ export default function EffectsControlPanel({
               </Button>
             </div>
           </div>
+
+          {/* Quick Tabs: Effects vs Backgrounds */}
+          <Tabs
+            value={quickSection}
+            onValueChange={(v) => setSelectedCategory(v === 'backgrounds' ? 'backgrounds' : 'all')}
+          >
+            <TabsList className="grid w-full grid-cols-2 mb-3">
+              <TabsTrigger value="effects">Effects</TabsTrigger>
+              <TabsTrigger value="backgrounds">Backgrounds</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
           {/* Category Filter */}
           <div className="mb-4">
