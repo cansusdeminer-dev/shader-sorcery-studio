@@ -3,12 +3,24 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Card } from '@/components/ui/card';
 import { MousePointer } from 'lucide-react';
-import EffectsControlPanel from '@/components/effects/EffectsControlPanel';
+import EffectsGrid from '@/components/effects/EffectsGrid';
+import SettingsDrawer from '@/components/effects/SettingsDrawer';
+import LayersDrawer, { type Layer } from '@/components/effects/LayersDrawer';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarTrigger, SidebarRail } from '@/components/ui/sidebar';
 import { EFFECTS_LIBRARY } from '../data/effectsLibrary';
 
-// Shader background component with dynamic effect loading
-function ShaderBackground({ effectKey, isPlaying, settings }) {
+// Shader background component with dynamic effect loading and optional blending
+function ShaderBackground({
+  effectKey,
+  isPlaying,
+  settings,
+  blending = 'normal',
+}: {
+  effectKey: string;
+  isPlaying: boolean;
+  settings: Record<string, any>;
+  blending?: 'additive' | 'normal';
+}) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { size } = useThree();
   const mouseRef = useRef(new THREE.Vector2(0.5, 0.5));
@@ -18,7 +30,7 @@ function ShaderBackground({ effectKey, isPlaying, settings }) {
   // Update shader uniforms
   useFrame((state) => {
     if (!meshRef.current || !effect) return;
-    
+
     const material = meshRef.current.material as THREE.ShaderMaterial;
     if (material.uniforms) {
       if (isPlaying) {
@@ -32,7 +44,7 @@ function ShaderBackground({ effectKey, isPlaying, settings }) {
           material.uniforms.uMouse.value.lerp(mouseRef.current, 0.05);
         }
       }
-      
+
       // Apply dynamic settings
       Object.keys(settings).forEach((key) => {
         if (material.uniforms[key]) {
@@ -83,7 +95,10 @@ function ShaderBackground({ effectKey, isPlaying, settings }) {
   const shaderMaterial = new THREE.ShaderMaterial({
     vertexShader: effect.vertexShader,
     fragmentShader: effect.fragmentShader,
-    uniforms: clonedUniforms
+    uniforms: clonedUniforms,
+    transparent: blending === 'additive',
+    blending: blending === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending,
+    depthWrite: blending !== 'additive',
   });
 
   return (
@@ -93,63 +108,122 @@ function ShaderBackground({ effectKey, isPlaying, settings }) {
   );
 }
 
+
 // Enhanced control panel with category filtering and advanced settings
 // Control panel moved to a dedicated sidebar component at
 // src/components/effects/EffectsControlPanel.tsx
 
 // Main Effects Hub component
 export default function EffectsHub() {
-  const [currentEffect, setCurrentEffect] = useState('cosmicAurora');
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [settings, setSettings] = useState(() => {
-    // Initialize settings with defaults from the first effect
-    const initialEffect = EFFECTS_LIBRARY[currentEffect];
-    const initialSettings = {};
-    initialEffect?.settings.forEach(setting => {
-      initialSettings[setting.key] = setting.default;
-    });
-    return initialSettings;
-  });
-
-  // Update settings when effect changes
-  useEffect(() => {
-    const effect = EFFECTS_LIBRARY[currentEffect];
-    if (effect) {
-      const newSettings = {};
-      effect.settings.forEach(setting => {
-        newSettings[setting.key] = setting.default;
-      });
-      setSettings(newSettings);
+  // Layers state (starts with one layer, preserving previous single-effect behavior)
+  const initialLayer: Layer = React.useMemo(() => {
+    const effectKey = 'cosmicAurora'
+    const eff = EFFECTS_LIBRARY[effectKey]
+    const defaults: Record<string, any> = {}
+    eff?.settings.forEach((s) => (defaults[s.key] = s.default))
+    return {
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2),
+      effectKey,
+      settings: defaults,
+      isPlaying: true,
+      blending: 'normal',
+      visible: true,
     }
-  }, [currentEffect]);
+  }, [])
+
+  const [layers, setLayers] = useState<Layer[]>([initialLayer])
+  const [activeLayerId, setActiveLayerId] = useState<string>(initialLayer.id)
+  const [selectedCategory, setSelectedCategory] = useState('all')
+
+  const activeLayer = layers.find((l) => l.id === activeLayerId) ?? layers[0]
+
+  const defaultsForEffect = (key: string) => {
+    const eff = EFFECTS_LIBRARY[key]
+    const obj: Record<string, any> = {}
+    eff?.settings.forEach((s) => (obj[s.key] = s.default))
+    return obj
+  }
+
+  const onSelectEffect = (key: string) => {
+    if (!activeLayer) return
+    setLayers((ls) =>
+      ls.map((l) =>
+        l.id === activeLayer.id
+          ? {
+              ...l,
+              effectKey: key,
+              settings: defaultsForEffect(key),
+            }
+          : l
+      )
+    )
+  }
+
+  const onSettingChange = (settingKey: string, value: any) => {
+    if (!activeLayer) return
+    setLayers((ls) =>
+      ls.map((l) =>
+        l.id === activeLayer.id ? { ...l, settings: { ...l.settings, [settingKey]: value } } : l
+      )
+    )
+  }
+
+  const onAddLayer = (effectKey?: string) => {
+    const key = effectKey ?? activeLayer?.effectKey ?? 'cosmicAurora'
+    const newLayer: Layer = {
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2),
+      effectKey: key,
+      settings: defaultsForEffect(key),
+      isPlaying: true,
+      blending: 'additive',
+      visible: true,
+    }
+    setLayers((ls) => [...ls, newLayer])
+    setActiveLayerId(newLayer.id)
+  }
+
+  const onRemoveLayer = (id: string) => {
+    setLayers((ls) => {
+      const filtered = ls.filter((l) => l.id !== id)
+      if (activeLayerId === id && filtered.length) {
+        setActiveLayerId(filtered[filtered.length - 1].id)
+      }
+      return filtered
+    })
+  }
+
+  const onUpdateLayer = (id: string, changes: Partial<Layer>) => {
+    setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...changes } : l)))
+  }
 
   return (
     <div className="fixed inset-0 w-full h-full overflow-hidden">
       {/* Full Screen Background Canvas */}
-      <Canvas 
-        className="absolute inset-0 w-full h-full" 
+      <Canvas
+        className="absolute inset-0 w-full h-full"
         camera={{ position: [0, 0, 1] }}
         gl={{ antialias: true, alpha: false }}
       >
-        <ShaderBackground 
-          effectKey={currentEffect}
-          isPlaying={isPlaying}
-          settings={settings}
-        />
+        {layers
+          .filter((l) => l.visible)
+          .map((l) => (
+            <ShaderBackground
+              key={l.id}
+              effectKey={l.effectKey}
+              isPlaying={l.isPlaying}
+              settings={l.settings}
+              blending={l.blending}
+            />
+          ))}
       </Canvas>
 
-      {/* Sidebar Control Panel */}
+      {/* Sidebar with Effect Icons Grid */}
       <SidebarProvider>
         <Sidebar className="absolute left-0 top-0 h-full" collapsible="icon">
           <SidebarContent>
-            <EffectsControlPanel
-              currentEffect={currentEffect}
-              setCurrentEffect={setCurrentEffect}
-              isPlaying={isPlaying}
-              setIsPlaying={setIsPlaying}
-              settings={settings}
-              setSettings={setSettings}
+            <EffectsGrid
+              activeEffectKey={activeLayer?.effectKey ?? 'cosmicAurora'}
+              onSelectEffect={onSelectEffect}
               selectedCategory={selectedCategory}
               setSelectedCategory={setSelectedCategory}
             />
@@ -159,6 +233,25 @@ export default function EffectsHub() {
         {/* Global trigger that remains visible */}
         <SidebarTrigger className="absolute top-4 left-4 z-20" />
       </SidebarProvider>
+
+      {/* Bottom Settings Drawer (glass) */}
+      {activeLayer && (
+        <SettingsDrawer
+          effectKey={activeLayer.effectKey}
+          settings={activeLayer.settings}
+          onSettingChange={onSettingChange}
+        />
+      )}
+
+      {/* Right Layers Drawer */}
+      <LayersDrawer
+        layers={layers}
+        activeLayerId={activeLayerId}
+        onSetActiveLayer={setActiveLayerId}
+        onAddLayer={onAddLayer}
+        onRemoveLayer={onRemoveLayer}
+        onUpdateLayer={onUpdateLayer}
+      />
 
       {/* Interactive Hint */}
       <div className="absolute bottom-6 right-6 z-10">
@@ -170,5 +263,5 @@ export default function EffectsHub() {
         </Card>
       </div>
     </div>
-  );
+  )
 }
