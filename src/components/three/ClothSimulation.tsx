@@ -1,11 +1,15 @@
 import React, { useEffect, useImperativeHandle, useRef, forwardRef } from "react";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 // Types
 export type SceneObject =
   | { type: "sphere"; position: [number, number, number]; radius?: number; visible?: boolean }
   | { type: "box"; position: [number, number, number]; size?: [number, number, number]; visible?: boolean }
   | { type: "cylinder"; position: [number, number, number]; radius?: number; height?: number; visible?: boolean };
+
+export type Orientation = "vertical" | "horizontal";
+export type PinMode = "topEdge" | "corners" | "none" | "custom";
 
 export type ClothProperties = {
   gridSize: number;
@@ -24,13 +28,20 @@ export type ClothProperties = {
   selfCollision: boolean;
   thickness: number;
   solverIterations?: number;
+  orientation?: Orientation;
+  pinMode?: PinMode;
+  customPins?: number[];
+  materialColor?: string; // hex string like #8844aa
+  roughness?: number;
+  metalness?: number;
+  wireframe?: boolean;
 };
 
 export type Collider =
   | { kind: "sphere"; center: THREE.Vector3; radius: number }
   | { kind: "box"; min: THREE.Vector3; max: THREE.Vector3 };
 
-type DragMode = "move" | "pin" | "tear";
+type DragMode = "move" | "pin" | "tear" | "unpin";
 
 type ClothSimulationProps = {
   isPlaying: boolean;
@@ -92,6 +103,9 @@ class ClothPhysicsEngine {
   selfCollision: boolean;
   thickness: number;
   solverIterations: number;
+  orientation: Orientation;
+  pinMode: PinMode;
+  customPins?: number[];
 
   particles: Particle[] = [];
   constraints: Constraint[] = [];
@@ -128,7 +142,15 @@ class ClothPhysicsEngine {
     this.thickness = options.thickness ?? 0.05;
     this.solverIterations = options.solverIterations ?? 4;
 
+    this.orientation = options.orientation ?? "vertical";
+    this.pinMode = options.pinMode ?? "topEdge";
+    this.customPins = options.customPins;
+
     this.initializeCloth();
+  }
+
+  private getParticleIndex(layer: number, x: number, y: number) {
+    return layer * this.gridSize * this.gridSize + y * this.gridSize + x;
   }
 
   initializeCloth() {
@@ -138,11 +160,23 @@ class ClothPhysicsEngine {
     for (let layer = 0; layer < this.layers; layer++) {
       for (let y = 0; y < this.gridSize; y++) {
         for (let x = 0; x < this.gridSize; x++) {
-          const worldX = (x / (this.gridSize - 1)) * this.clothWidth - this.clothWidth / 2;
-          const worldY = (y / (this.gridSize - 1)) * this.clothHeight - this.clothHeight / 2;
-          const worldZ = layer * (this.thickness / (this.layers - 1 || 1));
+          const u = x / (this.gridSize - 1);
+          const v = y / (this.gridSize - 1);
+          let worldX: number, worldY: number, worldZ: number;
 
-          const position = new THREE.Vector3(worldX, worldY + 1, worldZ);
+          if (this.orientation === "horizontal") {
+            // XZ plane at some Y
+            worldX = u * this.clothWidth - this.clothWidth / 2;
+            worldZ = v * this.clothHeight - this.clothHeight / 2;
+            worldY = 0.6 + layer * (this.thickness / (this.layers - 1 || 1));
+          } else {
+            // Vertical XY plane
+            worldX = u * this.clothWidth - this.clothWidth / 2;
+            worldY = v * this.clothHeight - this.clothHeight / 2 + 1;
+            worldZ = layer * (this.thickness / (this.layers - 1 || 1));
+          }
+
+          const position = new THREE.Vector3(worldX, worldY, worldZ);
           const particle: Particle = {
             index: layer * particleCount + y * this.gridSize + x,
             position,
@@ -166,12 +200,7 @@ class ClothPhysicsEngine {
     }
 
     this.createConstraints();
-
-    // Pin entire top edge of first layer for stability (y = 0 row in our build order)
-    for (let x = 0; x < this.gridSize; x++) {
-      this.pinnedParticles.add(x);
-      this.particles[x].pinned = true;
-    }
+    this.applyPinMode(this.pinMode, this.customPins);
   }
 
   createConstraints() {
@@ -222,6 +251,40 @@ class ClothPhysicsEngine {
       stiffness: this.springs[type].stiffness,
       dampening: this.springs[type].dampening,
     });
+  }
+
+  applyPinMode(mode: PinMode, customPins?: number[]) {
+    this.pinnedParticles.clear();
+    // unpin all
+    for (let i = 0; i < this.particles.length; i++) this.particles[i].pinned = false;
+
+    if (mode === "none") return;
+
+    if (mode === "topEdge") {
+      // top row of first layer (y=0)
+      for (let x = 0; x < this.gridSize; x++) {
+        const idx = this.getParticleIndex(0, x, 0);
+        this.pinnedParticles.add(idx);
+        this.particles[idx].pinned = true;
+      }
+    } else if (mode === "corners") {
+      const tl = this.getParticleIndex(0, 0, 0);
+      const tr = this.getParticleIndex(0, this.gridSize - 1, 0);
+      this.pinnedParticles.add(tl);
+      this.pinnedParticles.add(tr);
+      this.particles[tl].pinned = true;
+      this.particles[tr].pinned = true;
+    } else if (mode === "custom" && customPins?.length) {
+      for (const idx of customPins) {
+        if (idx >= 0 && idx < this.particles.length) {
+          this.pinnedParticles.add(idx);
+          this.particles[idx].pinned = true;
+        }
+      }
+    }
+
+    this.pinMode = mode;
+    this.customPins = customPins;
   }
 
   update(deltaTime: number, mousePosition: THREE.Vector3 | undefined, mouseForce: number, dragMode: DragMode, colliders: Collider[] | undefined) {
@@ -388,6 +451,10 @@ class ClothPhysicsEngine {
           this.pinnedParticles.add(closestParticle);
           particle.pinned = true;
           break;
+        case "unpin":
+          this.pinnedParticles.delete(closestParticle);
+          particle.pinned = false;
+          break;
         case "tear":
           for (let i = 0; i < this.constraints.length; i++) {
             const c = this.constraints[i];
@@ -429,6 +496,10 @@ class ClothPhysicsEngine {
     this.thickness = newProperties.thickness ?? this.thickness;
     this.solverIterations = newProperties.solverIterations ?? this.solverIterations;
 
+    if (newProperties.pinMode && newProperties.pinMode !== this.pinMode) {
+      this.applyPinMode(newProperties.pinMode, newProperties.customPins);
+    }
+
     // Springs
     this.springs = {
       structural: { stiffness: newProperties.structuralStiffness ?? this.springs.structural.stiffness, dampening: newProperties.dampness ?? this.springs.structural.dampening },
@@ -454,6 +525,7 @@ const ClothSimulation = forwardRef(function ClothSimulation(
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const clothEngineRef = useRef<ClothPhysicsEngine | null>(null);
   const clothMeshRef = useRef<THREE.Mesh | null>(null);
   const mouseRef = useRef(new THREE.Vector3());
@@ -463,11 +535,9 @@ const ClothSimulation = forwardRef(function ClothSimulation(
 
   useImperativeHandle(ref, () => ({
     resetSimulation: () => {
-      if (clothEngineRef.current) {
-        // Recreate engine with same properties
-        clothEngineRef.current = new ClothPhysicsEngine(clothProperties);
-        rebuildGeometry();
-      }
+      // Recreate engine with same properties
+      clothEngineRef.current = new ClothPhysicsEngine(clothProperties);
+      rebuildGeometry();
     },
   }));
 
@@ -563,8 +633,15 @@ const ClothSimulation = forwardRef(function ClothSimulation(
     geom.computeVertexNormals();
 
     // Create or update mesh
+    const color = new THREE.Color(clothProperties.materialColor || "#8844aa");
     if (!clothMeshRef.current) {
-      const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x8844aa), side: THREE.DoubleSide, roughness: 0.9, metalness: 0.05 });
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        side: THREE.DoubleSide,
+        roughness: clothProperties.roughness ?? 0.9,
+        metalness: clothProperties.metalness ?? 0.05,
+        wireframe: clothProperties.wireframe ?? false,
+      });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -574,6 +651,11 @@ const ClothSimulation = forwardRef(function ClothSimulation(
     } else {
       clothMeshRef.current.geometry.dispose();
       clothMeshRef.current.geometry = geom;
+      const mat = clothMeshRef.current.material as THREE.MeshStandardMaterial;
+      mat.color = color;
+      mat.roughness = clothProperties.roughness ?? 0.9;
+      mat.metalness = clothProperties.metalness ?? 0.05;
+      mat.wireframe = clothProperties.wireframe ?? false;
       clothMeshRef.current.scale.set(scale, scale, scale);
     }
   };
@@ -598,6 +680,15 @@ const ClothSimulation = forwardRef(function ClothSimulation(
     renderer.toneMappingExposure = 1.0;
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = true;
+    controls.minDistance = 1.2;
+    controls.maxDistance = 12;
+    controlsRef.current = controls;
 
     // Lights
     const ambient = new THREE.AmbientLight(0xffffff, 0.5);
@@ -628,6 +719,7 @@ const ClothSimulation = forwardRef(function ClothSimulation(
           clothEngineRef.current.update(dt, mouseRef.current, mouseForce, dragMode, collidersRef.current);
           updateClothMesh();
         }
+        controlsRef.current?.update();
         rendererRef.current.render(sceneRef.current, cameraRef.current);
       }
 
@@ -661,6 +753,7 @@ const ClothSimulation = forwardRef(function ClothSimulation(
       if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
       renderer.domElement.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("resize", handleResize);
+      controls.dispose();
       if (mountRef.current && renderer.domElement) mountRef.current.removeChild(renderer.domElement);
       renderer.dispose();
     };
@@ -670,13 +763,39 @@ const ClothSimulation = forwardRef(function ClothSimulation(
   // Update engine properties (cheap)
   useEffect(() => {
     clothEngineRef.current?.updateProperties(clothProperties);
-  }, [clothProperties.gravity, clothProperties.windForce, clothProperties.windDirection, clothProperties.airResistance, clothProperties.structuralStiffness, clothProperties.shearStiffness, clothProperties.bendStiffness, clothProperties.dampness, clothProperties.tearThreshold, clothProperties.selfCollision, clothProperties.thickness, clothProperties.solverIterations]);
+    // Update material live
+    if (clothMeshRef.current) {
+      const mat = clothMeshRef.current.material as THREE.MeshStandardMaterial;
+      if (clothProperties.materialColor) mat.color.set(clothProperties.materialColor);
+      if (clothProperties.roughness !== undefined) mat.roughness = clothProperties.roughness;
+      if (clothProperties.metalness !== undefined) mat.metalness = clothProperties.metalness;
+      if (clothProperties.wireframe !== undefined) mat.wireframe = clothProperties.wireframe;
+    }
+  }, [
+    clothProperties.gravity,
+    clothProperties.windForce,
+    clothProperties.windDirection,
+    clothProperties.airResistance,
+    clothProperties.structuralStiffness,
+    clothProperties.shearStiffness,
+    clothProperties.bendStiffness,
+    clothProperties.dampness,
+    clothProperties.tearThreshold,
+    clothProperties.selfCollision,
+    clothProperties.thickness,
+    clothProperties.solverIterations,
+    clothProperties.materialColor,
+    clothProperties.roughness,
+    clothProperties.metalness,
+    clothProperties.wireframe,
+    clothProperties.pinMode,
+  ]);
 
-  // Rebuild geometry and engine when resolution/layers change
+  // Rebuild geometry and engine when resolution/layers/orientation changes
   useEffect(() => {
     rebuildGeometry();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clothProperties.gridSize, clothProperties.layers]);
+  }, [clothProperties.gridSize, clothProperties.layers, clothProperties.orientation]);
 
   // Update scene objects + colliders
   useEffect(() => {
