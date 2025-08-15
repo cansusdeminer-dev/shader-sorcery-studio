@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import * as THREE from 'three';
 
-// Lava Blob Physics
+// Enhanced Lava Blob Physics with Advanced Collision
 class LavaBlob {
   position: THREE.Vector3;
   velocity: THREE.Vector3;
@@ -16,10 +16,16 @@ class LavaBlob {
   mergeTime: number;
   pulsation: number;
   deformation: THREE.Vector3;
+  oldPosition: THREE.Vector3;
+  acceleration: THREE.Vector3;
+  surfaceTension: number;
+  internalPressure: number;
 
   constructor(position: THREE.Vector3, radius: number, temperature = 1.0) {
     this.position = position.clone();
+    this.oldPosition = position.clone();
     this.velocity = new THREE.Vector3(0, 0, 0);
+    this.acceleration = new THREE.Vector3(0, 0, 0);
     this.radius = radius;
     this.baseRadius = radius;
     this.temperature = temperature;
@@ -31,63 +37,106 @@ class LavaBlob {
     this.mergeTime = 0;
     this.pulsation = Math.random() * Math.PI * 2;
     this.deformation = new THREE.Vector3(1, 1, 1);
+    this.surfaceTension = 0.02;
+    this.internalPressure = 1.0;
   }
 
-  update(deltaTime: number, heatSource: THREE.Vector3, coolZone: THREE.Vector3, globalViscosity: number, buoyancyForce: number) {
-    // Temperature dynamics
+  update(deltaTime: number, heatSource: THREE.Vector3, coolZone: THREE.Vector3, globalViscosity: number, buoyancyForce: number, containerRadius: number, containerHeight: number) {
+    // Clear forces
+    this.acceleration.set(0, -9.8, 0); // Gravity
+    
+    // Temperature dynamics with more sophisticated heat transfer
     const distToHeat = this.position.distanceTo(heatSource);
     const distToCool = this.position.distanceTo(coolZone);
     
-    if (distToHeat < 1.5) {
-      this.targetTemperature = Math.min(2.0, 1.0 + (1.5 - distToHeat) / 1.5);
-    } else if (distToCool < 1.5) {
-      this.targetTemperature = Math.max(0.1, 1.0 - (1.5 - distToCool) / 1.5);
-    } else {
-      this.targetTemperature = 0.7;
-    }
+    // Heat transfer based on distance and thermal conductivity
+    const heatInfluence = Math.exp(-distToHeat * 0.8) * 2.0;
+    const coolInfluence = Math.exp(-distToCool * 0.8) * 1.5;
     
-    this.temperature += (this.targetTemperature - this.temperature) * deltaTime * 2;
+    this.targetTemperature = 0.7 + heatInfluence - coolInfluence;
+    this.targetTemperature = Math.max(0.1, Math.min(2.5, this.targetTemperature));
     
-    // Radius changes with temperature
-    this.radius = this.baseRadius * (0.8 + 0.4 * this.temperature);
+    // Smooth temperature transition
+    this.temperature += (this.targetTemperature - this.temperature) * deltaTime * 3;
     
-    // Buoyancy based on temperature
-    const tempBuoyancy = (this.temperature - 0.5) * buoyancyForce;
-    this.velocity.y += tempBuoyancy * deltaTime;
+    // Dynamic radius based on temperature with surface tension
+    const tempExpansion = 0.7 + 0.6 * this.temperature;
+    const surfaceTensionEffect = 1.0 - this.surfaceTension * (2.0 - this.temperature);
+    this.radius = this.baseRadius * tempExpansion * surfaceTensionEffect;
     
-    // Pulsation effect
-    this.pulsation += deltaTime * 2;
-    const pulse = Math.sin(this.pulsation) * 0.1 + 1;
-    this.deformation.set(pulse, 1/pulse, pulse);
+    // Thermal buoyancy with convection effects
+    const thermalBuoyancy = (this.temperature - 0.8) * buoyancyForce * 1.5;
+    this.acceleration.y += thermalBuoyancy;
     
-    // Viscosity
-    this.velocity.multiplyScalar(Math.pow(globalViscosity, deltaTime * 60));
+    // Internal pressure effects on deformation
+    this.pulsation += deltaTime * (1 + this.temperature * 0.5);
+    const pulse = Math.sin(this.pulsation) * 0.15 + 1;
+    const pressureDeform = 1.0 + (this.internalPressure - 1.0) * 0.1;
+    this.deformation.set(pulse * pressureDeform, (1/pulse) * pressureDeform, pulse * pressureDeform);
     
-    // Update position
-    this.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+    // Advanced viscosity with temperature dependency
+    const tempViscosity = globalViscosity * (2.0 - this.temperature * 0.5);
+    this.velocity.multiplyScalar(Math.pow(tempViscosity, deltaTime * 60));
     
-    // Container bounds
-    const containerRadius = 0.8;
-    const containerHeight = 3;
+    // Enhanced collision detection with glass container
+    this.handleGlassCollision(containerRadius, containerHeight, deltaTime);
     
-    // Cylindrical container collision
+    // Verlet integration for better stability
+    const newPosition = this.position.clone()
+      .add(this.position.clone().sub(this.oldPosition).add(this.acceleration.clone().multiplyScalar(deltaTime * deltaTime)));
+    
+    this.oldPosition.copy(this.position);
+    this.position.copy(newPosition);
+    
+    // Update velocity for next frame
+    this.velocity.copy(this.position.clone().sub(this.oldPosition).divideScalar(deltaTime));
+  }
+
+  handleGlassCollision(containerRadius: number, containerHeight: number, deltaTime: number) {
+    const glassThickness = 0.05;
+    const innerRadius = containerRadius - glassThickness;
+    
+    // Cylindrical container collision with glass thickness
     const xzDist = Math.sqrt(this.position.x * this.position.x + this.position.z * this.position.z);
-    if (xzDist + this.radius > containerRadius) {
+    if (xzDist + this.radius > innerRadius) {
+      const penetration = (xzDist + this.radius) - innerRadius;
       const normal = new THREE.Vector3(this.position.x, 0, this.position.z).normalize();
-      this.position.copy(normal.multiplyScalar(containerRadius - this.radius));
-      this.velocity.reflect(normal).multiplyScalar(0.3);
+      
+      // Collision response with glass material properties
+      this.position.sub(normal.clone().multiplyScalar(penetration));
+      
+      // Glass collision dampening
+      const velocityNormal = this.velocity.clone().projectOnVector(normal);
+      const velocityTangent = this.velocity.clone().sub(velocityNormal);
+      
+      this.velocity.copy(velocityTangent.multiplyScalar(0.7).add(velocityNormal.multiplyScalar(-0.4)));
+      
+      // Heat transfer to glass (cooling effect)
+      this.temperature *= 0.98;
     }
     
-    // Bottom collision
+    // Bottom collision with heat plate
     if (this.position.y - this.radius < -containerHeight/2) {
-      this.position.y = -containerHeight/2 + this.radius;
-      this.velocity.y = Math.abs(this.velocity.y) * 0.3;
+      const penetration = (-containerHeight/2) - (this.position.y - this.radius);
+      this.position.y += penetration;
+      
+      if (this.velocity.y < 0) {
+        this.velocity.y = Math.abs(this.velocity.y) * 0.4;
+        // Heat absorption from bottom plate
+        this.temperature = Math.min(2.5, this.temperature + 0.1);
+      }
     }
     
-    // Top collision
+    // Top collision with cooling plate
     if (this.position.y + this.radius > containerHeight/2) {
-      this.position.y = containerHeight/2 - this.radius;
-      this.velocity.y = -Math.abs(this.velocity.y) * 0.3;
+      const penetration = (this.position.y + this.radius) - containerHeight/2;
+      this.position.y -= penetration;
+      
+      if (this.velocity.y > 0) {
+        this.velocity.y = -Math.abs(this.velocity.y) * 0.4;
+        // Heat loss to top cooling
+        this.temperature = Math.max(0.1, this.temperature - 0.05);
+      }
     }
   }
   
@@ -117,22 +166,28 @@ class LavaLampEngine {
   options: any;
   heatSource: THREE.Vector3;
   coolZone: THREE.Vector3;
+  containerRadius: number;
+  containerHeight: number;
 
   constructor(options: any = {}) {
     this.blobs = [];
     this.options = {
-      blobCount: options.blobCount || 8,
-      minRadius: options.minRadius || 0.05,
-      maxRadius: options.maxRadius || 0.15,
+      blobCount: options.blobCount || 6,
+      minRadius: options.minRadius || 0.03,
+      maxRadius: options.maxRadius || 0.08,
       viscosity: options.viscosity || 0.98,
       buoyancy: options.buoyancy || 0.02,
       mergingEnabled: options.mergingEnabled || true,
       splitEnabled: options.splitEnabled || true,
+      solverIterations: options.solverIterations || 3,
+      thermalDiffusion: options.thermalDiffusion || 0.1,
       ...options
     };
     
-    this.heatSource = new THREE.Vector3(0, -1.2, 0);
-    this.coolZone = new THREE.Vector3(0, 1.2, 0);
+    this.containerRadius = 0.8;
+    this.containerHeight = 3;
+    this.heatSource = new THREE.Vector3(0, -this.containerHeight/2 + 0.1, 0);
+    this.coolZone = new THREE.Vector3(0, this.containerHeight/2 - 0.1, 0);
     
     this.initializeBlobs();
   }
@@ -141,10 +196,10 @@ class LavaLampEngine {
     this.blobs = [];
     for (let i = 0; i < this.options.blobCount; i++) {
       const angle = (i / this.options.blobCount) * Math.PI * 2;
-      const radius = Math.random() * 0.5;
+      const radius = Math.random() * 0.3;
       const position = new THREE.Vector3(
         Math.cos(angle) * radius,
-        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 1.5,
         Math.sin(angle) * radius
       );
       
@@ -156,49 +211,93 @@ class LavaLampEngine {
   }
   
   update(deltaTime: number) {
-    // Update each blob
-    this.blobs.forEach(blob => {
-      blob.update(deltaTime, this.heatSource, this.coolZone, this.options.viscosity, this.options.buoyancy);
-    });
+    // Multiple solver iterations for stability
+    for (let iter = 0; iter < this.options.solverIterations; iter++) {
+      // Update each blob
+      this.blobs.forEach(blob => {
+        blob.update(deltaTime / this.options.solverIterations, this.heatSource, this.coolZone, 
+                   this.options.viscosity, this.options.buoyancy, this.containerRadius, this.containerHeight);
+      });
+      
+      // Inter-blob interactions
+      this.handleBlobInteractions();
+    }
     
     // Handle merging
     if (this.options.mergingEnabled) {
-      for (let i = this.blobs.length - 1; i >= 0; i--) {
-        for (let j = i - 1; j >= 0; j--) {
-          if (this.blobs[i].canMerge(this.blobs[j])) {
-            this.blobs[i].merge(this.blobs[j]);
-            this.blobs.splice(j, 1);
-            i--; // Adjust index since we removed an element
-            break;
-          }
-        }
-      }
+      this.handleMerging();
     }
     
     // Handle splitting (when blob gets too large)
     if (this.options.splitEnabled) {
-      const toSplit = [];
-      this.blobs.forEach((blob, index) => {
-        if (blob.radius > this.options.maxRadius * 2 && Math.random() < 0.01) {
-          toSplit.push(index);
-        }
-      });
-      
-      toSplit.reverse().forEach(index => {
-        const blob = this.blobs[index];
-        const newRadius = blob.radius * 0.7;
-        
-        // Create two new smaller blobs
-        const offset = new THREE.Vector3(newRadius, 0, 0);
-        const blob1 = new LavaBlob(blob.position.clone().add(offset), newRadius, blob.temperature);
-        const blob2 = new LavaBlob(blob.position.clone().sub(offset), newRadius, blob.temperature);
-        
-        blob1.velocity.set(0.1, 0, 0);
-        blob2.velocity.set(-0.1, 0, 0);
-        
-        this.blobs.splice(index, 1, blob1, blob2);
-      });
+      this.handleSplitting();
     }
+  }
+  
+  handleBlobInteractions() {
+    // Blob-to-blob repulsion and thermal exchange
+    for (let i = 0; i < this.blobs.length; i++) {
+      for (let j = i + 1; j < this.blobs.length; j++) {
+        const blobA = this.blobs[i];
+        const blobB = this.blobs[j];
+        
+        const distance = blobA.position.distanceTo(blobB.position);
+        const minDistance = blobA.radius + blobB.radius;
+        
+        if (distance < minDistance * 1.2) {
+          // Soft repulsion
+          const repulsionForce = (minDistance * 1.2 - distance) * 0.5;
+          const direction = blobA.position.clone().sub(blobB.position).normalize();
+          
+          blobA.position.add(direction.clone().multiplyScalar(repulsionForce * 0.5));
+          blobB.position.add(direction.clone().multiplyScalar(-repulsionForce * 0.5));
+          
+          // Thermal exchange
+          const tempDiff = blobA.temperature - blobB.temperature;
+          const exchange = tempDiff * this.options.thermalDiffusion * 0.01;
+          blobA.temperature -= exchange;
+          blobB.temperature += exchange;
+        }
+      }
+    }
+  }
+  
+  handleMerging() {
+    for (let i = this.blobs.length - 1; i >= 0; i--) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (this.blobs[i].canMerge(this.blobs[j])) {
+          this.blobs[i].merge(this.blobs[j]);
+          this.blobs.splice(j, 1);
+          i--; // Adjust index since we removed an element
+          break;
+        }
+      }
+    }
+  }
+  
+  handleSplitting() {
+    const toSplit = [];
+    this.blobs.forEach((blob, index) => {
+      if (blob.radius > this.options.maxRadius * 1.8 && Math.random() < 0.008) {
+        toSplit.push(index);
+      }
+    });
+    
+    toSplit.reverse().forEach(index => {
+      const blob = this.blobs[index];
+      const newRadius = blob.radius * 0.75;
+      
+      // Create two new smaller blobs with proper physics
+      const offset = new THREE.Vector3(newRadius * 0.8, 0, 0);
+      const blob1 = new LavaBlob(blob.position.clone().add(offset), newRadius, blob.temperature);
+      const blob2 = new LavaBlob(blob.position.clone().sub(offset), newRadius, blob.temperature);
+      
+      // Give them opposing velocities
+      blob1.velocity.set(0.05, 0.02, 0);
+      blob2.velocity.set(-0.05, -0.02, 0);
+      
+      this.blobs.splice(index, 1, blob1, blob2);
+    });
   }
   
   updateOptions(newOptions: any) {
@@ -216,6 +315,8 @@ interface LavaLampProps {
     buoyancy: number;
     mergingEnabled: boolean;
     splitEnabled: boolean;
+    solverIterations: number;
+    thermalDiffusion: number;
   };
   materialProperties: {
     lavaColor: string;
@@ -357,17 +458,20 @@ const LavaLampSimulation = forwardRef<any, LavaLampProps>((props, ref) => {
     coolGlow.position.set(0, 1.2, 0);
     scene.add(coolGlow);
     
-    // Glass container
+    // Glass container with proper transparency
     const glassGeometry = new THREE.CylinderGeometry(0.85, 0.85, 3, 32, 1, true);
     const glassMaterial = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(materialProperties.glassColor),
       transparent: true,
-      opacity: 1 - materialProperties.glassTransparency,
+      opacity: Math.max(0.1, 1 - materialProperties.glassTransparency),
       roughness: materialProperties.glassRoughness,
       thickness: materialProperties.glassThickness,
       ior: materialProperties.glassIOR,
-      transmission: materialProperties.glassTransparency,
-      side: THREE.DoubleSide
+      transmission: Math.min(0.95, materialProperties.glassTransparency),
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1,
+      side: THREE.DoubleSide,
+      envMapIntensity: 0.9
     });
     
     const glassMesh = new THREE.Mesh(glassGeometry, glassMaterial);

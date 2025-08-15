@@ -14,13 +14,15 @@ const LavaLamp3D = () => {
   
   // Lava physics properties
   const [lavaProperties, setLavaProperties] = useState({
-    blobCount: 8,
-    minRadius: 0.05,
-    maxRadius: 0.15,
+    blobCount: 6,
+    minRadius: 0.03,
+    maxRadius: 0.08,
     viscosity: 0.98,
     buoyancy: 0.02,
     mergingEnabled: true,
-    splitEnabled: true
+    splitEnabled: true,
+    solverIterations: 3,
+    thermalDiffusion: 0.1
   });
   
   // Material properties
@@ -54,27 +56,27 @@ const LavaLamp3D = () => {
   
   const presets = {
     Classic: {
-      lava: { blobCount: 8, minRadius: 0.05, maxRadius: 0.15, viscosity: 0.98, buoyancy: 0.02 },
+      lava: { blobCount: 6, minRadius: 0.03, maxRadius: 0.08, viscosity: 0.98, buoyancy: 0.02, solverIterations: 3, thermalDiffusion: 0.1 },
       material: { lavaColor: '#ff6b35', lavaEmissive: '#ff4500', lavaTranslucency: 0.1, emissiveIntensity: 0.8 },
       lighting: { bottomHeatGlow: 2.0, topCoolGlow: 0.5, ambientIntensity: 0.2 }
     },
     Ethereal: {
-      lava: { blobCount: 12, minRadius: 0.03, maxRadius: 0.08, viscosity: 0.99, buoyancy: 0.01 },
+      lava: { blobCount: 8, minRadius: 0.02, maxRadius: 0.05, viscosity: 0.99, buoyancy: 0.01, solverIterations: 4, thermalDiffusion: 0.15 },
       material: { lavaColor: '#9d4edd', lavaEmissive: '#c77dff', lavaTranslucency: 0.3, emissiveIntensity: 1.2 },
       lighting: { bottomHeatGlow: 1.5, topCoolGlow: 1.0, ambientIntensity: 0.1 }
     },
     Volcanic: {
-      lava: { blobCount: 6, minRadius: 0.08, maxRadius: 0.25, viscosity: 0.95, buoyancy: 0.04 },
+      lava: { blobCount: 4, minRadius: 0.05, maxRadius: 0.12, viscosity: 0.95, buoyancy: 0.04, solverIterations: 2, thermalDiffusion: 0.05 },
       material: { lavaColor: '#d62828', lavaEmissive: '#f77f00', lavaTranslucency: 0.05, emissiveIntensity: 1.5 },
       lighting: { bottomHeatGlow: 3.0, topCoolGlow: 0.2, ambientIntensity: 0.05 }
     },
     Ocean: {
-      lava: { blobCount: 15, minRadius: 0.02, maxRadius: 0.06, viscosity: 0.99, buoyancy: 0.008 },
+      lava: { blobCount: 10, minRadius: 0.015, maxRadius: 0.04, viscosity: 0.99, buoyancy: 0.008, solverIterations: 5, thermalDiffusion: 0.2 },
       material: { lavaColor: '#0077be', lavaEmissive: '#00b4d8', lavaTranslucency: 0.4, emissiveIntensity: 0.6 },
       lighting: { bottomHeatGlow: 1.0, topCoolGlow: 2.0, ambientIntensity: 0.3 }
     },
     Neon: {
-      lava: { blobCount: 10, minRadius: 0.04, maxRadius: 0.12, viscosity: 0.97, buoyancy: 0.03 },
+      lava: { blobCount: 7, minRadius: 0.025, maxRadius: 0.07, viscosity: 0.97, buoyancy: 0.03, solverIterations: 3, thermalDiffusion: 0.12 },
       material: { lavaColor: '#39ff14', lavaEmissive: '#ccff33', lavaTranslucency: 0.2, emissiveIntensity: 2.0 },
       lighting: { bottomHeatGlow: 2.5, topCoolGlow: 1.5, ambientIntensity: 0.1 }
     }
@@ -241,6 +243,30 @@ const LavaLamp3D = () => {
                     onCheckedChange={(checked) => updateLavaProperty('splitEnabled', checked)}
                   />
                   <Label>Enable Splitting</Label>
+                </div>
+                
+                <div>
+                  <Label>Solver Iterations: {lavaProperties.solverIterations}</Label>
+                  <Slider
+                    value={[lavaProperties.solverIterations]}
+                    onValueChange={([value]) => updateLavaProperty('solverIterations', value)}
+                    min={1}
+                    max={6}
+                    step={1}
+                    className="w-full"
+                  />
+                </div>
+                
+                <div>
+                  <Label>Thermal Diffusion: {lavaProperties.thermalDiffusion.toFixed(3)}</Label>
+                  <Slider
+                    value={[lavaProperties.thermalDiffusion]}
+                    onValueChange={([value]) => updateLavaProperty('thermalDiffusion', value)}
+                    min={0.01}
+                    max={0.3}
+                    step={0.01}
+                    className="w-full"
+                  />
                 </div>
               </div>
             </TabsContent>
