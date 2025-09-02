@@ -142,8 +142,9 @@ class LavaBlob {
   
   canMerge(other: LavaBlob) {
     const distance = this.position.distanceTo(other.position);
-    const mergeThreshold = (this.radius + other.radius) * 0.7;
-    return distance < mergeThreshold;
+    const mergeThreshold = (this.radius + other.radius) * 0.9;
+    const tempSimilarity = Math.abs(this.temperature - other.temperature) < 0.3;
+    return distance < mergeThreshold && tempSimilarity;
   }
   
   merge(other: LavaBlob) {
@@ -235,7 +236,7 @@ class LavaLampEngine {
   }
   
   handleBlobInteractions() {
-    // Blob-to-blob repulsion and thermal exchange
+    // Blob-to-blob thermal exchange and gentle interaction
     for (let i = 0; i < this.blobs.length; i++) {
       for (let j = i + 1; j < this.blobs.length; j++) {
         const blobA = this.blobs[i];
@@ -244,17 +245,19 @@ class LavaLampEngine {
         const distance = blobA.position.distanceTo(blobB.position);
         const minDistance = blobA.radius + blobB.radius;
         
-        if (distance < minDistance * 1.2) {
-          // Soft repulsion
-          const repulsionForce = (minDistance * 1.2 - distance) * 0.5;
+        // Only apply very gentle repulsion if overlapping too much
+        if (distance < minDistance * 0.3) {
+          const repulsionForce = (minDistance * 0.3 - distance) * 0.1;
           const direction = blobA.position.clone().sub(blobB.position).normalize();
           
           blobA.position.add(direction.clone().multiplyScalar(repulsionForce * 0.5));
           blobB.position.add(direction.clone().multiplyScalar(-repulsionForce * 0.5));
-          
-          // Thermal exchange
+        }
+        
+        // Enhanced thermal exchange
+        if (distance < minDistance * 1.5) {
           const tempDiff = blobA.temperature - blobB.temperature;
-          const exchange = tempDiff * this.options.thermalDiffusion * 0.01;
+          const exchange = tempDiff * this.options.thermalDiffusion * 0.02;
           blobA.temperature -= exchange;
           blobB.temperature += exchange;
         }
@@ -463,15 +466,15 @@ const LavaLampSimulation = forwardRef<any, LavaLampProps>((props, ref) => {
     const glassMaterial = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(materialProperties.glassColor),
       transparent: true,
-      opacity: Math.max(0.1, 1 - materialProperties.glassTransparency),
+      opacity: 0.15,
       roughness: materialProperties.glassRoughness,
       thickness: materialProperties.glassThickness,
       ior: materialProperties.glassIOR,
-      transmission: Math.min(0.95, materialProperties.glassTransparency),
+      transmission: 0.95,
       clearcoat: 1.0,
-      clearcoatRoughness: 0.1,
+      clearcoatRoughness: 0.05,
       side: THREE.DoubleSide,
-      envMapIntensity: 0.9
+      envMapIntensity: 0.3
     });
     
     const glassMesh = new THREE.Mesh(glassGeometry, glassMaterial);
