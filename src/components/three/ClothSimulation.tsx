@@ -35,6 +35,10 @@ export type ClothProperties = {
   roughness?: number;
   metalness?: number;
   wireframe?: boolean;
+  // Advanced collision controls
+  collisionForce?: number; // multiplier for collision correction strength
+  collisionDistance?: number; // multiplier for min separation distance
+  ignoreNeighborCollisions?: boolean; // skip adjacent particle pairs for self-collision
 };
 
 export type Collider =
@@ -113,6 +117,11 @@ class ClothPhysicsEngine {
   pinnedParticles = new Set<number>();
   time = 0;
 
+  // Collision controls
+  collisionForce: number;
+  collisionDistance: number;
+  ignoreNeighborCollisions: boolean;
+
   // temp vectors to reduce allocations
   private tmpDelta = new THREE.Vector3();
   private tmpWind = new THREE.Vector3();
@@ -145,6 +154,11 @@ class ClothPhysicsEngine {
     this.orientation = options.orientation ?? "vertical";
     this.pinMode = options.pinMode ?? "topEdge";
     this.customPins = options.customPins;
+
+    // Advanced collision controls
+    this.collisionForce = options.collisionForce ?? 1.0;
+    this.collisionDistance = options.collisionDistance ?? 1.0;
+    this.ignoreNeighborCollisions = options.ignoreNeighborCollisions ?? false;
 
     this.initializeCloth();
   }
@@ -402,8 +416,8 @@ class ClothPhysicsEngine {
           const dist = d.length();
           const r = col.radius;
           if (dist < r) {
-            // push out
-            const amt = (r - dist) / (dist || 1);
+            // push out scaled by collisionForce
+            const amt = ((r - dist) / (dist || 1)) * (this.collisionForce || 1);
             p.position.add(d.multiplyScalar(amt));
           }
         } else if (col.kind === "box") {
@@ -418,9 +432,9 @@ class ClothPhysicsEngine {
             const dy = Math.min(p.position.y - min.y, max.y - p.position.y);
             const dz = Math.min(p.position.z - min.z, max.z - p.position.z);
             const m = Math.min(dx, dy, dz);
-            if (m === dx) p.position.x += p.position.x - (p.position.x - min.x < max.x - p.position.x ? min.x : max.x) > 0 ? m : -m;
-            else if (m === dy) p.position.y += p.position.y - (p.position.y - min.y < max.y - p.position.y ? min.y : max.y) > 0 ? m : -m;
-            else p.position.z += p.position.z - (p.position.z - min.z < max.z - p.position.z ? min.z : max.z) > 0 ? m : -m;
+            if (m === dx) p.position.x += (p.position.x - (p.position.x - min.x < max.x - p.position.x ? min.x : max.x) > 0 ? m : -m) * (this.collisionForce || 1);
+            else if (m === dy) p.position.y += (p.position.y - (p.position.y - min.y < max.y - p.position.y ? min.y : max.y) > 0 ? m : -m) * (this.collisionForce || 1);
+            else p.position.z += (p.position.z - (p.position.z - min.z < max.z - p.position.z ? min.z : max.z) > 0 ? m : -m) * (this.collisionForce || 1);
           }
         }
       }
@@ -474,10 +488,16 @@ class ClothPhysicsEngine {
       for (let j = i + 1; j < this.particles.length; j++) {
         const a = this.particles[i];
         const b = this.particles[j];
+        if (this.ignoreNeighborCollisions) {
+          const dx = Math.abs(a.gridX - b.gridX);
+          const dy = Math.abs(a.gridY - b.gridY);
+          if (dx <= 1 && dy <= 1) continue; // skip immediate neighbors
+        }
         const distance = a.position.distanceTo(b.position);
-        const minDistance = this.thickness;
+        const minDistance = this.thickness * (this.collisionDistance || 1);
         if (distance < minDistance) {
-          this.tmpDelta.copy(b.position).sub(a.position).normalize().multiplyScalar((minDistance - distance) * 0.5);
+          const strength = (minDistance - distance) * 0.5 * (this.collisionForce || 1);
+          this.tmpDelta.copy(b.position).sub(a.position).normalize().multiplyScalar(strength);
           if (!this.pinnedParticles.has(i)) a.position.sub(this.tmpDelta);
           if (!this.pinnedParticles.has(j)) b.position.add(this.tmpDelta);
         }
@@ -495,6 +515,9 @@ class ClothPhysicsEngine {
     this.selfCollision = newProperties.selfCollision ?? this.selfCollision;
     this.thickness = newProperties.thickness ?? this.thickness;
     this.solverIterations = newProperties.solverIterations ?? this.solverIterations;
+    this.collisionForce = newProperties.collisionForce ?? this.collisionForce;
+    this.collisionDistance = newProperties.collisionDistance ?? this.collisionDistance;
+    this.ignoreNeighborCollisions = newProperties.ignoreNeighborCollisions ?? this.ignoreNeighborCollisions;
 
     if (newProperties.pinMode && newProperties.pinMode !== this.pinMode) {
       this.applyPinMode(newProperties.pinMode, newProperties.customPins);

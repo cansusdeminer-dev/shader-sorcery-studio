@@ -109,7 +109,7 @@ class LavaBlob {
       const velocityNormal = this.velocity.clone().projectOnVector(normal);
       const velocityTangent = this.velocity.clone().sub(velocityNormal);
       
-      this.velocity.copy(velocityTangent.multiplyScalar(0.7).add(velocityNormal.multiplyScalar(-0.4)));
+      this.velocity.copy(velocityTangent.multiplyScalar(0.4).add(velocityNormal.multiplyScalar(-0.2)));
       
       // Heat transfer to glass (cooling effect)
       this.temperature *= 0.98;
@@ -142,9 +142,8 @@ class LavaBlob {
   
   canMerge(other: LavaBlob) {
     const distance = this.position.distanceTo(other.position);
-    const mergeThreshold = (this.radius + other.radius) * 0.9;
-    const tempSimilarity = Math.abs(this.temperature - other.temperature) < 0.3;
-    return distance < mergeThreshold && tempSimilarity;
+    const mergeThreshold = (this.radius + other.radius) * 1.05;
+    return distance < mergeThreshold;
   }
   
   merge(other: LavaBlob) {
@@ -236,7 +235,7 @@ class LavaLampEngine {
   }
   
   handleBlobInteractions() {
-    // Blob-to-blob thermal exchange and gentle interaction
+    // Blob-to-blob thermal exchange with minimal repulsion (promote merging)
     for (let i = 0; i < this.blobs.length; i++) {
       for (let j = i + 1; j < this.blobs.length; j++) {
         const blobA = this.blobs[i];
@@ -245,16 +244,17 @@ class LavaLampEngine {
         const distance = blobA.position.distanceTo(blobB.position);
         const minDistance = blobA.radius + blobB.radius;
         
-        // Only apply very gentle repulsion if overlapping too much
-        if (distance < minDistance * 0.3) {
-          const repulsionForce = (minDistance * 0.3 - distance) * 0.1;
+        // Only apply tiny repulsion on deep overlap to avoid jitter
+        if (distance < minDistance * 0.1) {
+          const repulsionForce = (minDistance * 0.1 - distance) * 0.05;
           const direction = blobA.position.clone().sub(blobB.position).normalize();
-          
-          blobA.position.add(direction.clone().multiplyScalar(repulsionForce * 0.5));
-          blobB.position.add(direction.clone().multiplyScalar(-repulsionForce * 0.5));
+          if (repulsionForce > 0 && isFinite(repulsionForce)) {
+            blobA.position.add(direction.clone().multiplyScalar(repulsionForce * 0.5));
+            blobB.position.add(direction.clone().multiplyScalar(-repulsionForce * 0.5));
+          }
         }
         
-        // Enhanced thermal exchange
+        // Thermal exchange encourages convection and merging
         if (distance < minDistance * 1.5) {
           const tempDiff = blobA.temperature - blobB.temperature;
           const exchange = tempDiff * this.options.thermalDiffusion * 0.02;
@@ -466,15 +466,15 @@ const LavaLampSimulation = forwardRef<any, LavaLampProps>((props, ref) => {
     const glassMaterial = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(materialProperties.glassColor),
       transparent: true,
-      opacity: 0.15,
+      opacity: 1.0, // use transmission for see-through
       roughness: materialProperties.glassRoughness,
       thickness: materialProperties.glassThickness,
       ior: materialProperties.glassIOR,
-      transmission: 0.95,
+      transmission: 0.98,
       clearcoat: 1.0,
       clearcoatRoughness: 0.05,
       side: THREE.DoubleSide,
-      envMapIntensity: 0.3
+      envMapIntensity: 0.2
     });
     
     const glassMesh = new THREE.Mesh(glassGeometry, glassMaterial);
@@ -600,11 +600,11 @@ const LavaLampSimulation = forwardRef<any, LavaLampProps>((props, ref) => {
     
     if (glassMaterialRef.current) {
       glassMaterialRef.current.color.set(materialProperties.glassColor);
-      glassMaterialRef.current.opacity = 1 - materialProperties.glassTransparency;
+      glassMaterialRef.current.opacity = 1.0; // keep fully opaque, rely on transmission
       glassMaterialRef.current.roughness = materialProperties.glassRoughness;
       glassMaterialRef.current.thickness = materialProperties.glassThickness;
       glassMaterialRef.current.ior = materialProperties.glassIOR;
-      glassMaterialRef.current.transmission = materialProperties.glassTransparency;
+      glassMaterialRef.current.transmission = Math.min(1, Math.max(0, materialProperties.glassTransparency));
     }
   }, [materialProperties]);
   

@@ -5,6 +5,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 const heroCloth: ClothProperties = {
   gridSize: 32,
@@ -29,6 +30,10 @@ const heroCloth: ClothProperties = {
   roughness: 0.9,
   metalness: 0.05,
   wireframe: false,
+  // New collision controls defaults
+  collisionForce: 1.0,
+  collisionDistance: 1.0,
+  ignoreNeighborCollisions: false,
 };
 
 const flagPreset: ClothProperties = {
